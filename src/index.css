@@ -1,0 +1,110 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #0066CC;
+  --color-primary-dark: #004D99;
+  --color-primary-light: #3385DB;
+
+  --color-background: #FFFFFF;
+  --color-background-alt: #F8FAFB;
+  --color-background-dark: #F1F5F9;
+
+  --color-text: #1A202C;
+  --color-text-light: #4A5568;
+  --color-text-lighter: #718096;
+
+  --font-sans: "Inter", "system-ui", "sans-serif";
+  --font-heading: "Space Grotesk", "system-ui", "sans-serif";
+
+  --animate-mic-pulse: micPulse 1.5s ease-in-out infinite;
+
+  --shadow-mic-active: 0 0 40px rgba(0, 102, 204, 0.6);
+}
+
+@keyframes micPulse {
+
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+
+  50% {
+    transform: scale(1.1);
+    opacity: 0.8;
+  }
+}
+
+@layer base {
+  body {
+    @apply bg-background text-text font-sans antialiased;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    @apply font-heading;
+  }
+}
+
+@layer components {
+
+  /* Glassmorphism effect for Drive Mode */
+  .glass {
+    @apply bg-white/10 backdrop-blur-md border border-white/20;
+  }
+
+  /* Large accessible button for Drive Mode */
+  .mic-button {
+    @apply w-52 h-52 rounded-full bg-primary hover:bg-primary-dark active:scale-95 transition-all duration-300 shadow-2xl flex items-center justify-center touch-none select-none;
+  }
+
+  .mic-button.active {
+    @apply animate-mic-pulse shadow-mic-active;
+  }
+
+  /* Chat bubble styles for Office Mode */
+  .chat-bubble {
+    @apply rounded-2xl px-4 py-3 max-w-[80%] break-words;
+  }
+
+  .chat-bubble.user {
+    @apply bg-primary text-white ml-auto;
+  }
+
+  .chat-bubble.ai {
+    @apply bg-background-dark text-text mr-auto;
+  }
+
+  /* Input styles */
+  .input-primary {
+    @apply w-full px-4 py-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all;
+  }
+
+  /* Button styles */
+  .btn-primary {
+    @apply px-6 py-3 bg-primary hover:bg-primary-dark text-white rounded-lg font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-secondary {
+    @apply px-6 py-3 bg-background-dark hover:bg-background-dark/80 text-text rounded-lg font-medium transition-all duration-200;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  /* Safe area for mobile devices */
+  .safe-area-top {
+    padding-top: env(safe-area-inset-top);
+  }
+
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
