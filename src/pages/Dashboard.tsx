@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { useStore } from '../store';
+import { useStore, SUPPORTED_INDUSTRIES } from '../store';
+import { INDUSTRY_TEMPLATES } from '../lib/templates';
+import ThemeToggle from '../components/ThemeToggle';
 import {
     Plus,
     Search,
@@ -8,7 +10,9 @@ import {
     MoreVertical,
     Clock,
     Globe2,
-    ArrowRight
+    ArrowRight,
+    Settings,
+    LogOut
 } from 'lucide-react';
 
 interface SOP {
@@ -20,15 +24,21 @@ interface SOP {
     updated_at: string;
     tags?: string[];
     version?: number;
+    profiles?: {
+        full_name: string;
+    };
 }
 
-export default function Dashboard({ onNewSOP, onViewSOP }: {
+export default function Dashboard({ onNewSOP, onViewSOP, onSettings }: {
     onNewSOP: () => void;
     onViewSOP: (sop: SOP) => void;
+    onSettings: () => void;
 }) {
     const [sops, setSops] = useState<SOP[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
-    const { user, setIsLoading, setError, isLoading } = useStore();
+    const [showUserMenu, setShowUserMenu] = useState(false);
+    const { user, selectedIndustry, setIsLoading, setError, isLoading } = useStore();
+    const templates = INDUSTRY_TEMPLATES[selectedIndustry] || INDUSTRY_TEMPLATES.other;
 
     useEffect(() => {
         const fetchSOPs = async () => {
@@ -37,7 +47,7 @@ export default function Dashboard({ onNewSOP, onViewSOP }: {
             try {
                 const response = await supabase
                     ?.from('sops')
-                    .select('*')
+                    .select('*, profiles(full_name)')
                     .order('updated_at', { ascending: false });
 
                 const data = response?.data;
@@ -66,12 +76,51 @@ export default function Dashboard({ onNewSOP, onViewSOP }: {
             <header className="bg-white border-b border-gray-100 sticky top-0 z-10">
                 <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
                     <h1 className="text-xl font-heading font-bold text-text">Klaro</h1>
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-3">
+                        <ThemeToggle />
                         <button className="p-2 text-text-light hover:bg-gray-100 rounded-full" onClick={() => setSearchQuery('')}>
                             <Search className="w-5 h-5" />
                         </button>
-                        <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center text-white font-bold text-xs">
-                            {user?.email?.substring(0, 1).toUpperCase()}
+                        <button className="p-2 text-text-light hover:bg-gray-100 rounded-full" onClick={onSettings} title="Settings">
+                            <Settings className="w-5 h-5" />
+                        </button>
+                        <div className="relative">
+                            <button
+                                onClick={() => setShowUserMenu(!showUserMenu)}
+                                className="w-8 h-8 bg-primary rounded-full flex items-center justify-center text-white font-bold text-xs hover:ring-2 hover:ring-primary/30 transition-all cursor-pointer"
+                            >
+                                {user?.email?.substring(0, 1).toUpperCase()}
+                            </button>
+                            {showUserMenu && (
+                                <>
+                                    <div className="fixed inset-0 z-40" onClick={() => setShowUserMenu(false)} />
+                                    <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-xl shadow-lg border border-gray-100 py-2 z-50 animate-in fade-in slide-in-from-top-2">
+                                        <div className="px-4 py-3 border-b border-gray-100">
+                                            <p className="text-sm font-bold text-text truncate">{user?.email}</p>
+                                            <p className="text-xs text-text-lighter mt-0.5">Signed in</p>
+                                        </div>
+                                        <button
+                                            onClick={() => { setShowUserMenu(false); onSettings(); }}
+                                            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-text-light hover:bg-gray-50 transition-colors"
+                                        >
+                                            <Settings className="w-4 h-4" />
+                                            Settings
+                                        </button>
+                                        <div className="border-t border-gray-100 my-1" />
+                                        <button
+                                            onClick={async () => {
+                                                setShowUserMenu(false);
+                                                await supabase?.auth.signOut();
+                                                window.location.reload();
+                                            }}
+                                            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                                        >
+                                            <LogOut className="w-4 h-4" />
+                                            Sign Out
+                                        </button>
+                                    </div>
+                                </>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -104,15 +153,45 @@ export default function Dashboard({ onNewSOP, onViewSOP }: {
                         <ArrowRight className="w-5 h-5 ml-auto opacity-60" />
                     </button>
 
-                    <div className="flex items-center p-6 bg-white rounded-2xl text-text border border-gray-100 shadow-sm">
-                        <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center mr-4 text-primary">
-                            <FileText className="w-6 h-6" />
-                        </div>
+                </div>
+
+                {/* Template Suggestions */}
+                <div className="mb-10">
+                    <div className="flex items-center justify-between mb-4">
                         <div>
-                            <div className="font-bold text-lg">Browse Library</div>
-                            <div className="text-text-light text-sm">Explore all templates</div>
+                            <h3 className="font-bold text-text uppercase text-xs tracking-wider">
+                                💡 SOP Ideas for {SUPPORTED_INDUSTRIES[selectedIndustry].name}
+                            </h3>
+                            <p className="text-text-lighter text-xs mt-1">Common processes in your industry — click to start creating</p>
                         </div>
-                        <ArrowRight className="w-5 h-5 ml-auto text-text-lighter" />
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {templates.map((template) => (
+                            <button
+                                key={template.title}
+                                onClick={() => onViewSOP({
+                                    id: `template-${template.title}`,
+                                    title: template.title,
+                                    content: template.content,
+                                    language: 'en',
+                                    created_at: new Date().toISOString(),
+                                    updated_at: new Date().toISOString(),
+                                    tags: template.tags,
+                                })}
+                                className="flex items-start gap-4 p-5 bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:border-primary/20 transition-all text-left group"
+                            >
+                                <div className="text-2xl mt-0.5">{template.icon}</div>
+                                <div className="flex-1 min-w-0">
+                                    <h4 className="font-bold text-sm text-text group-hover:text-primary transition-colors">{template.title}</h4>
+                                    <p className="text-xs text-text-lighter mt-1 leading-relaxed">{template.description}</p>
+                                    <div className="flex flex-wrap gap-1.5 mt-2">
+                                        {template.tags.map(tag => (
+                                            <span key={tag} className="text-[10px] bg-primary/5 text-primary/70 px-2 py-0.5 rounded-full font-bold">#{tag}</span>
+                                        ))}
+                                    </div>
+                                </div>
+                            </button>
+                        ))}
                     </div>
                 </div>
 

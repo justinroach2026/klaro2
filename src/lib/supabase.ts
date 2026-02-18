@@ -43,6 +43,15 @@ export interface Database {
                     team_id: string | null;
                     full_name: string | null;
                     language_preference: string;
+                    industry: string | null;
+                    country: string | null;
+                    agentic_prompt: string | null;
+                    company_name: string | null;
+                    company_logo_url: string | null;
+                    company_website: string | null;
+                    company_email: string | null;
+                    company_phone: string | null;
+                    company_address: string | null;
                     created_at: string;
                 };
                 Insert: Omit<Database['public']['Tables']['profiles']['Row'], 'created_at'>;
@@ -113,6 +122,38 @@ export const signInWithMagicLink = async (email: string) => {
     return data;
 };
 
+export const signInWithPassword = async (email: string, password: string) => {
+    const { data, error } = await supabase?.auth.signInWithPassword({
+        email,
+        password,
+    }) || { data: null, error: new Error('Supabase not initialized') };
+
+    if (error) throw error;
+    return data;
+};
+
+export const signUpWithPassword = async (email: string, password: string) => {
+    const { data, error } = await supabase?.auth.signUp({
+        email,
+        password,
+        options: {
+            emailRedirectTo: `${window.location.origin}/auth/callback`,
+        },
+    }) || { data: null, error: new Error('Supabase not initialized') };
+
+    if (error) throw error;
+    return data;
+};
+
+export const resetPasswordForEmail = async (email: string) => {
+    const { data, error } = await supabase?.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+    }) || { data: null, error: new Error('Supabase not initialized') };
+
+    if (error) throw error;
+    return data;
+};
+
 export const signOut = async () => {
     const { error } = await supabase?.auth.signOut() || { error: null };
     if (error) throw error;
@@ -129,6 +170,18 @@ export const getProfile = async (userId: string) => {
         ?.from('profiles')
         .select('*, teams(*)')
         .eq('id', userId)
+        .single() || { data: null, error: new Error('Supabase not initialized') };
+
+    if (error) throw error;
+    return data;
+};
+
+export const updateProfile = async (userId: string, updates: any) => {
+    const { data, error } = await supabase
+        ?.from('profiles')
+        .update(updates)
+        .eq('id', userId)
+        .select()
         .single() || { data: null, error: new Error('Supabase not initialized') };
 
     if (error) throw error;

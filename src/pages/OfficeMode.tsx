@@ -9,6 +9,9 @@ import { Mic, Send } from 'lucide-react';
 export default function OfficeMode() {
     const {
         selectedLanguage,
+        selectedIndustry,
+        selectedCountry,
+        profile,
         isRecording,
         addMessage,
         interviewMessages,
@@ -19,8 +22,9 @@ export default function OfficeMode() {
     const [isProcessing, setIsProcessing] = useState(false);
     const [showGenerateButton, setShowGenerateButton] = useState(false);
     const [isGenerating, setIsGenerating] = useState(false);
+    const [isComplete, setIsComplete] = useState(false);
 
-    const aiInterviewer = useRef(new AIInterviewer(selectedLanguage));
+    const aiInterviewer = useRef(new AIInterviewer(selectedLanguage, selectedIndustry, selectedCountry, profile?.agentic_prompt));
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -126,8 +130,8 @@ export default function OfficeMode() {
 
             if (error) throw error;
 
-            alert('SOP Generated Successfully!');
-            window.location.reload(); // Temporary way to go back to dashboard
+            setIsComplete(true);
+            addMessage({ role: 'ai', content: "🎉 Your SOP has been generated and saved! You can now view it in your dashboard." });
         } catch (error) {
             console.error('SOP generation error:', error);
             alert('Failed to generate SOP. Please try again.');
@@ -229,38 +233,49 @@ export default function OfficeMode() {
                 </div>
             </div>
 
-            {/* Input */}
+            {/* Input / Success State */}
             <div className="bg-white border-t border-gray-200 p-4 safe-area-bottom">
-                <div className="max-w-4xl mx-auto flex items-center gap-2">
-                    <button
-                        onClick={handleVoiceInput}
-                        className={`p-3 rounded-lg transition-colors ${isRecording
-                            ? 'bg-red-500 text-white'
-                            : 'bg-background-dark hover:bg-background-dark/80 text-text'
-                            }`}
-                        disabled={isProcessing || isGenerating}
-                    >
-                        {isRecording ? <Mic className="w-5 h-5 animate-pulse" /> : <Mic className="w-5 h-5" />}
-                    </button>
+                {isComplete ? (
+                    <div className="max-w-4xl mx-auto flex flex-col items-center py-4">
+                        <button
+                            onClick={() => window.location.href = '/'} // This will trigger App's re-render to dashboard
+                            className="btn-primary w-full max-w-sm py-4 rounded-xl font-bold flex items-center justify-center gap-2"
+                        >
+                            Return to Dashboard
+                        </button>
+                    </div>
+                ) : (
+                    <div className="max-w-4xl mx-auto flex items-center gap-2">
+                        <button
+                            onClick={handleVoiceInput}
+                            className={`p-3 rounded-lg transition-colors ${isRecording
+                                ? 'bg-red-500 text-white'
+                                : 'bg-background-dark hover:bg-background-dark/80 text-text'
+                                }`}
+                            disabled={isProcessing || isGenerating}
+                        >
+                            {isRecording ? <Mic className="w-5 h-5 animate-pulse" /> : <Mic className="w-5 h-5" />}
+                        </button>
 
-                    <input
-                        type="text"
-                        value={inputText}
-                        onChange={(e) => setInputText(e.target.value)}
-                        onKeyPress={(e) => e.key === 'Enter' && handleSendText()}
-                        placeholder="Type your message..."
-                        className="input-primary flex-1"
-                        disabled={isProcessing || isRecording || isGenerating}
-                    />
+                        <input
+                            type="text"
+                            value={inputText}
+                            onChange={(e) => setInputText(e.target.value)}
+                            onKeyPress={(e) => e.key === 'Enter' && handleSendText()}
+                            placeholder="Type your message..."
+                            className="input-primary flex-1"
+                            disabled={isProcessing || isRecording || isGenerating}
+                        />
 
-                    <button
-                        onClick={handleSendText}
-                        className="btn-primary"
-                        disabled={!inputText.trim() || isProcessing || isRecording || isGenerating}
-                    >
-                        <Send className="w-5 h-5" />
-                    </button>
-                </div>
+                        <button
+                            onClick={handleSendText}
+                            className="btn-primary"
+                            disabled={!inputText.trim() || isProcessing || isRecording || isGenerating}
+                        >
+                            <Send className="w-5 h-5" />
+                        </button>
+                    </div>
+                )}
             </div>
         </div>
     );

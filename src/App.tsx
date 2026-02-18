@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useStore } from './store';
-import { supabase } from './lib/supabase';
+import { supabase, getProfile, updateProfile } from './lib/supabase';
 import LanguageSelector from './components/LanguageSelector';
 import ModeSelector from './components/ModeSelector';
 import DriveMode from './pages/DriveMode';
@@ -8,26 +8,66 @@ import OfficeMode from './pages/OfficeMode';
 import Auth from './pages/Auth';
 import Dashboard from './pages/Dashboard';
 import SOPViewer from './pages/SOPViewer';
+import IndustrySelector from './components/IndustrySelector';
+import CountrySelector from './components/CountrySelector';
+import ResearchPanel from './components/ResearchPanel';
+import Settings from './pages/Settings';
 import './index.css';
 
-type View = 'auth' | 'dashboard' | 'language' | 'mode' | 'interview' | 'viewer';
+type View = 'auth' | 'dashboard' | 'settings' | 'language' | 'country' | 'industry' | 'research' | 'mode' | 'interview' | 'viewer';
 
 function App() {
   const [currentView, setCurrentView] = useState<View>('auth');
   const [selectedSop, setSelectedSop] = useState<any>(null);
-  const { setUser, interviewMode } = useStore();
+  const { user, setUser, setProfile, setSelectedLanguage, setSelectedIndustry, setSelectedCountry, interviewMode, theme } = useStore();
+
+  // Apply theme
+  useEffect(() => {
+    const root = document.documentElement;
+    const applyTheme = (t: 'light' | 'dark' | 'system') => {
+      if (t === 'dark' || (t === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+        root.classList.add('dark');
+      } else {
+        root.classList.remove('dark');
+      }
+    };
+    applyTheme(theme);
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const handler = () => { if (theme === 'system') applyTheme('system'); };
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, [theme]);
+
+  // Load profile on auth and restore saved preferences
+  const loadProfile = async (userId: string) => {
+    try {
+      const profile = await getProfile(userId);
+      if (profile) {
+        setProfile(profile);
+        if (profile.language_preference) setSelectedLanguage(profile.language_preference as any);
+        if (profile.industry) setSelectedIndustry(profile.industry as any);
+        if (profile.country) setSelectedCountry(profile.country as any);
+      }
+    } catch (err) {
+      console.error('Error loading profile:', err);
+    }
+  };
 
   // Handle auth session
   useEffect(() => {
     supabase?.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
-      if (session?.user) setCurrentView('dashboard');
+      if (session?.user) {
+        setCurrentView('dashboard');
+        loadProfile(session.user.id);
+      }
     });
 
     const { data: { subscription } } = supabase?.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
       if (session?.user) {
         setCurrentView('dashboard');
+        loadProfile(session.user.id);
       } else {
         setCurrentView('auth');
       }
@@ -41,7 +81,29 @@ function App() {
   };
 
   const handleLanguageSelected = () => {
-    setCurrentView('mode');
+    setCurrentView('country');
+  };
+
+  const handleCountrySelected = () => {
+    setCurrentView('industry');
+  };
+
+  const handleIndustrySelected = async () => {
+    if (user) {
+      try {
+        const { selectedIndustry, selectedCountry, selectedLanguage } = useStore.getState();
+        await updateProfile(user.id, {
+          industry: selectedIndustry,
+          country: selectedCountry,
+          language_preference: selectedLanguage
+        });
+        const updatedProfile = await getProfile(user.id);
+        setProfile(updatedProfile);
+      } catch (err) {
+        console.error('Error saving profile:', err);
+      }
+    }
+    setCurrentView('research');
   };
 
   const handleModeSelected = () => {
@@ -63,7 +125,13 @@ function App() {
         <Dashboard
           onNewSOP={handleStartInterview}
           onViewSOP={handleViewSop}
+          onSettings={() => setCurrentView('settings')}
         />
+      )}
+
+      {/* Settings View */}
+      {currentView === 'settings' && (
+        <Settings onBack={() => setCurrentView('dashboard')} />
       )}
 
       {/* Language Selection */}
@@ -84,6 +152,55 @@ function App() {
               Continue
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Country Selection */}
+      {currentView === 'country' && (
+        <div className="min-h-screen flex flex-col items-center justify-center p-6">
+          <CountrySelector />
+          <div className="w-full max-w-md mt-6 flex gap-3 px-6">
+            <button
+              onClick={() => setCurrentView('language')}
+              className="btn-secondary flex-1"
+            >
+              Back
+            </button>
+            <button
+              onClick={handleCountrySelected}
+              className="btn-primary flex-1"
+            >
+              Continue
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Industry Selection */}
+      {currentView === 'industry' && (
+        <div className="min-h-screen flex flex-col items-center justify-center p-6">
+          <IndustrySelector />
+          <div className="w-full max-w-md mt-6 flex gap-3 px-6">
+            <button
+              onClick={() => setCurrentView('country')}
+              className="btn-secondary flex-1"
+            >
+              Back
+            </button>
+            <button
+              onClick={handleIndustrySelected}
+              className="btn-primary flex-1"
+            >
+              Continue
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Research View */}
+      {currentView === 'research' && (
+        <div className="min-h-screen flex flex-col items-center justify-center p-6">
+          <ResearchPanel onContinue={() => setCurrentView('mode')} onBack={() => setCurrentView('industry')} />
         </div>
       )}
 

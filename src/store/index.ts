@@ -15,11 +15,75 @@ export const SUPPORTED_LANGUAGES = {
 
 export type LanguageCode = keyof typeof SUPPORTED_LANGUAGES;
 
+// Supported industries
+export const SUPPORTED_INDUSTRIES = {
+    tech: { name: 'Technology & Software', icon: 'Code', description: 'Software development, SaaS, and IT services.' },
+    healthcare: { name: 'Healthcare & Medical', icon: 'Stethoscope', description: 'Medical clinics, hospitals, and health services.' },
+    hospitality: { name: 'Hospitality & Tourism', icon: 'Hotel', description: 'Hotels, restaurants, and travel agencies.' },
+    manufacturing: { name: 'Manufacturing & Logistics', icon: 'Factory', description: 'Production lines, warehousing, and shipping.' },
+    professional: { name: 'Professional Services', icon: 'Briefcase', description: 'Legal, accounting, consulting, and finance.' },
+    education: { name: 'Education & Training', icon: 'GraduationCap', description: 'Schools, universities, and corporate training.' },
+    retail: { name: 'Retail & E-commerce', icon: 'ShoppingBag', description: 'Online shops and brick-and-mortar stores.' },
+    construction: { name: 'Construction & Development', icon: 'HardHat', description: 'Building projects, infrastructure, and heavy construction.' },
+    real_estate: { name: 'Real Estate', icon: 'Building', description: 'Property management, sales, leasing, and appraisal.' },
+    other: { name: 'Other / General', icon: 'Layout', description: 'General business processes and operations.' },
+} as const;
+
+export type IndustryCode = keyof typeof SUPPORTED_INDUSTRIES;
+
+// Supported countries — EMEA first rollout, plus key global markets
+export const SUPPORTED_COUNTRIES = {
+    // Europe
+    gb: { name: 'United Kingdom', flag: '🇬🇧', currency: 'GBP', region: 'Europe' },
+    ie: { name: 'Ireland', flag: '🇮🇪', currency: 'EUR', region: 'Europe' },
+    fr: { name: 'France', flag: '🇫🇷', currency: 'EUR', region: 'Europe' },
+    de: { name: 'Germany', flag: '🇩🇪', currency: 'EUR', region: 'Europe' },
+    nl: { name: 'Netherlands', flag: '🇳🇱', currency: 'EUR', region: 'Europe' },
+    be: { name: 'Belgium', flag: '🇧🇪', currency: 'EUR', region: 'Europe' },
+    es: { name: 'Spain', flag: '🇪🇸', currency: 'EUR', region: 'Europe' },
+    pt: { name: 'Portugal', flag: '🇵🇹', currency: 'EUR', region: 'Europe' },
+    it: { name: 'Italy', flag: '🇮🇹', currency: 'EUR', region: 'Europe' },
+    ch: { name: 'Switzerland', flag: '🇨🇭', currency: 'CHF', region: 'Europe' },
+    at: { name: 'Austria', flag: '🇦🇹', currency: 'EUR', region: 'Europe' },
+    se: { name: 'Sweden', flag: '🇸🇪', currency: 'SEK', region: 'Europe' },
+    no: { name: 'Norway', flag: '🇳🇴', currency: 'NOK', region: 'Europe' },
+    dk: { name: 'Denmark', flag: '🇩🇰', currency: 'DKK', region: 'Europe' },
+    fi: { name: 'Finland', flag: '🇫🇮', currency: 'EUR', region: 'Europe' },
+    pl: { name: 'Poland', flag: '🇵🇱', currency: 'PLN', region: 'Europe' },
+    cz: { name: 'Czech Republic', flag: '🇨🇿', currency: 'CZK', region: 'Europe' },
+    gr: { name: 'Greece', flag: '🇬🇷', currency: 'EUR', region: 'Europe' },
+    // Middle East
+    ae: { name: 'United Arab Emirates', flag: '🇦🇪', currency: 'AED', region: 'Middle East' },
+    sa: { name: 'Saudi Arabia', flag: '🇸🇦', currency: 'SAR', region: 'Middle East' },
+    qa: { name: 'Qatar', flag: '🇶🇦', currency: 'QAR', region: 'Middle East' },
+    il: { name: 'Israel', flag: '🇮🇱', currency: 'ILS', region: 'Middle East' },
+    // Africa
+    za: { name: 'South Africa', flag: '🇿🇦', currency: 'ZAR', region: 'Africa' },
+    ng: { name: 'Nigeria', flag: '🇳🇬', currency: 'NGN', region: 'Africa' },
+    ke: { name: 'Kenya', flag: '🇰🇪', currency: 'KES', region: 'Africa' },
+    eg: { name: 'Egypt', flag: '🇪🇬', currency: 'EGP', region: 'Africa' },
+    // Global
+    us: { name: 'United States', flag: '🇺🇸', currency: 'USD', region: 'Americas' },
+    ca: { name: 'Canada', flag: '🇨🇦', currency: 'CAD', region: 'Americas' },
+    au: { name: 'Australia', flag: '🇦🇺', currency: 'AUD', region: 'Asia-Pacific' },
+} as const;
+
+export type CountryCode = keyof typeof SUPPORTED_COUNTRIES;
+
 interface Profile {
     id: string;
     team_id: string;
     full_name: string | null;
     language_preference: string;
+    industry?: IndustryCode;
+    country?: CountryCode;
+    agentic_prompt?: string;
+    company_name?: string;
+    company_logo_url?: string;
+    company_website?: string;
+    company_email?: string;
+    company_phone?: string;
+    company_address?: string;
 }
 
 interface Team {
@@ -48,6 +112,8 @@ interface AppState {
     // Interview state
     interviewMode: 'drive' | 'office' | null;
     selectedLanguage: LanguageCode;
+    selectedIndustry: IndustryCode;
+    selectedCountry: CountryCode;
     interviewMessages: InterviewMessage[];
     isRecording: boolean;
     isSpeaking: boolean;
@@ -55,6 +121,8 @@ interface AppState {
 
     setInterviewMode: (mode: 'drive' | 'office' | null) => void;
     setSelectedLanguage: (lang: LanguageCode) => void;
+    setSelectedIndustry: (industry: IndustryCode) => void;
+    setSelectedCountry: (country: CountryCode) => void;
     addMessage: (message: Omit<InterviewMessage, 'timestamp'>) => void;
     clearMessages: () => void;
     setIsRecording: (recording: boolean) => void;
@@ -62,8 +130,10 @@ interface AppState {
     setSessionId: (id: string | null) => void;
 
     // UI state
+    theme: 'light' | 'dark' | 'system';
     isLoading: boolean;
     error: string | null;
+    setTheme: (theme: 'light' | 'dark' | 'system') => void;
     setIsLoading: (loading: boolean) => void;
     setError: (error: string | null) => void;
 }
@@ -80,6 +150,8 @@ export const useStore = create<AppState>((set) => ({
     // Interview state
     interviewMode: null,
     selectedLanguage: 'en',
+    selectedIndustry: 'other',
+    selectedCountry: 'gb',
     interviewMessages: [],
     isRecording: false,
     isSpeaking: false,
@@ -87,6 +159,8 @@ export const useStore = create<AppState>((set) => ({
 
     setInterviewMode: (mode) => set({ interviewMode: mode }),
     setSelectedLanguage: (lang) => set({ selectedLanguage: lang }),
+    setSelectedIndustry: (industry) => set({ selectedIndustry: industry }),
+    setSelectedCountry: (country) => set({ selectedCountry: country }),
     addMessage: (message) =>
         set((state) => ({
             interviewMessages: [
@@ -100,8 +174,13 @@ export const useStore = create<AppState>((set) => ({
     setSessionId: (id) => set({ sessionId: id }),
 
     // UI state
+    theme: (localStorage.getItem('klaro-theme') as 'light' | 'dark' | 'system') || 'system',
     isLoading: false,
     error: null,
+    setTheme: (theme) => {
+        localStorage.setItem('klaro-theme', theme);
+        set({ theme });
+    },
     setIsLoading: (loading) => set({ isLoading: loading }),
     setError: (error) => set({ error }),
 }));

@@ -1,171 +1,318 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useStore } from '../store';
 import { voiceEngine } from '../lib/voice';
 import { AIInterviewer } from '../lib/ai/interviewer';
-import { Mic, StopCircle } from 'lucide-react';
+import { Mic, Square, Play, RefreshCw } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+
+type SessionStatus = 'idle' | 'speaking' | 'listening' | 'processing';
 
 export default function DriveMode() {
     const {
         selectedLanguage,
-        isRecording,
-        isSpeaking,
+        selectedIndustry,
+        selectedCountry,
+        profile,
         addMessage,
-        setIsRecording,
-        setIsSpeaking,
+        setIsRecording
     } = useStore();
 
+    const [status, setStatus] = useState<SessionStatus>('idle');
     const [currentTranscript, setCurrentTranscript] = useState('');
     const [currentAIResponse, setCurrentAIResponse] = useState('');
-    const [isPressing, setIsPressing] = useState(false);
+    const [showGenerateButton, setShowGenerateButton] = useState(false);
+    const [isGenerating, setIsGenerating] = useState(false);
+    const [isComplete, setIsComplete] = useState(false);
 
-    const aiInterviewer = useRef(new AIInterviewer(selectedLanguage));
-    const pressTimer = useRef<number | null>(null);
+    // Logic refs
+    const aiInterviewer = useRef<AIInterviewer | null>(null);
+    const isSessionActive = useRef(false);
 
     useEffect(() => {
-        // Load voices when component mounts
+        aiInterviewer.current = new AIInterviewer(selectedLanguage, selectedIndustry, selectedCountry, profile?.agentic_prompt);
+
+        // Preload voices
         if ('speechSynthesis' in window) {
             window.speechSynthesis.getVoices();
         }
 
-        // Start with AI greeting
-        const greet = async () => {
-            const greeting = {
-                en: "Hello! I'm here to help you document your business process. What process would you like to create an SOP for today?",
-                es: "¡Hola! Estoy aquí para ayudarte a documentar tu proceso comercial. ¿Para qué proceso te gustaría crear un POE hoy?",
-                nl: "Hallo! Ik ben hier om je te helpen je bedrijfsproces te documenteren. Voor welk proces wil je vandaag een SOP maken?",
-                fr: "Bonjour! Je suis là pour vous aider à documenter votre processus commercial. Pour quel processus souhaitez-vous créer une POS aujourd'hui?",
-                de: "Hallo! Ich bin hier, um Ihnen bei der Dokumentation Ihres Geschäftsprozesses zu helfen. Für welchen Prozess möchten Sie heute eine SOP erstellen?",
-                it: "Ciao! Sono qui per aiutarti a documentare il tuo processo aziendale. Per quale processo vorresti creare una SOP oggi?",
-                pt: "Olá! Estou aqui para ajudá-lo a documentar seu processo de negócios. Para qual processo você gostaria de criar um POP hoje?",
-                pl: "Cześć! Jestem tutaj, aby pomóc Ci udokumentować Twój proces biznesowy. Dla jakiego procesu chciałbyś stworzyć SOP dzisiaj?",
-            }[selectedLanguage];
-
-            if (greeting) {
-                setCurrentAIResponse(greeting);
-                addMessage({ role: 'ai', content: greeting });
-                setIsSpeaking(true);
-                await voiceEngine.speak(greeting, selectedLanguage);
-                setIsSpeaking(false);
-            }
+        return () => {
+            // Cleanup on unmount
+            handleStopSession();
         };
-
-        greet();
     }, [selectedLanguage]);
 
-    const handlePressStart = () => {
-        setIsPressing(true);
+    const handleStartSession = async () => {
+        if (isSessionActive.current) return;
 
-        // Start recording after 100ms to avoid accidental taps
-        pressTimer.current = window.setTimeout(async () => {
-            try {
-                await voiceEngine.startRecording();
-                setIsRecording(true);
-            } catch (error) {
-                console.error('Recording error:', error);
-                alert('Failed to start recording. Please check microphone permissions.');
-            }
-        }, 100);
-    };
+        isSessionActive.current = true;
+        setStatus('speaking');
 
-    const handlePressEnd = async () => {
-        setIsPressing(false);
+        // 1. Initial Greeting
+        const greeting = {
+            en: "Drive mode on. I'm listening. What process shall we document today?",
+            es: "Modo de conducción activado. Te escucho. ¿Qué proceso documentaremos hoy?",
+            nl: "Rijmodus aan. Ik luister. Welk proces zullen we vandaag documenteren?",
+            fr: "Mode conduite activé. Je vous écoute. Quel processus allons-nous documenter aujourd'hui?",
+            de: "Fahrmodus ein. Ich höre zu. Welchen Prozess sollen wir heute dokumentieren?",
+            it: "Modalità guida attiva. Ti ascolto. Quale processo documenteremo oggi?",
+            pt: "Modo de direção ativado. Estou ouvindo. Qual processo devemos documentar hoje?",
+            pl: "Tryb jazdy włączony. Słucham. Jaki proces dziś udokumentujemy?"
+        }[selectedLanguage] || "Drive mode on. What process shall we document?";
 
-        if (pressTimer.current) {
-            clearTimeout(pressTimer.current);
-            pressTimer.current = null;
-        }
-
-        if (!isRecording) return;
+        setCurrentAIResponse(greeting);
+        addMessage({ role: 'ai', content: greeting });
 
         try {
-            // Stop recording
-            const audioBlob = await voiceEngine.stopRecording();
-            setIsRecording(false);
+            // Speak Greeting
+            await voiceEngine.speak(greeting, selectedLanguage);
 
-            // Transcribe audio
+            // Start Loop
+            if (isSessionActive.current) {
+                startListeningLoop();
+            }
+        } catch (error) {
+            console.error("Greeting failed:", error);
+            if (isSessionActive.current) startListeningLoop();
+        }
+    };
+
+    const handleGenerateSOP = async () => {
+        setIsGenerating(true);
+        handleStopSession();
+        try {
+            const { user, team } = useStore.getState();
+            if (!user || !team) throw new Error('Not authenticated');
+
+            const firstUserMessage = useStore.getState().interviewMessages.find(m => m.role === 'user')?.content || 'Untitled SOP';
+            const title = firstUserMessage.length > 50 ? firstUserMessage.substring(0, 50) + '...' : firstUserMessage;
+
+            const content = await aiInterviewer.current!.generateSOP(title);
+            const metadata = await aiInterviewer.current!.extractMetadata(title);
+
+            const { error } = await supabase!
+                .from('sops')
+                .insert({
+                    team_id: team.id,
+                    title: title,
+                    content: content,
+                    language: selectedLanguage,
+                    tags: metadata.tags || [],
+                    version: 1,
+                    created_by: user.id
+                });
+
+            if (error) throw error;
+
+            setIsComplete(true);
+            setCurrentAIResponse("🎉 Your SOP has been generated! You can now return to the dashboard.");
+            voiceEngine.speak("Your SOP has been generated. You can now return to the dashboard.", selectedLanguage);
+        } catch (error) {
+            console.error('SOP generation error:', error);
+            alert('Failed to generate SOP.');
+        } finally {
+            setIsGenerating(false);
+        }
+    };
+
+    const handleStopSession = () => {
+        isSessionActive.current = false;
+        voiceEngine.stopSpeaking();
+        voiceEngine.stopRecording(); // This cleans up VAD too
+        setIsRecording(false);
+        setStatus('idle');
+    };
+
+    const startListeningLoop = async () => {
+        if (!isSessionActive.current) return;
+
+        setStatus('listening');
+        setIsRecording(true);
+        setCurrentTranscript('');
+
+        try {
+            await voiceEngine.startRecording({
+                onSilence: () => {
+                    // Silence detected! Stop and process.
+                    completeTurn();
+                }
+            });
+        } catch (error) {
+            console.error("Start listening failed:", error);
+            alert("Could not start microphone. Please check permissions.");
+            handleStopSession();
+        }
+    };
+
+    const completeTurn = async () => {
+        if (!isSessionActive.current) return;
+
+        setStatus('processing');
+        setIsRecording(false); // UI update
+
+        try {
+            // 1. Stop Recording & Get Audio
+            const audioBlob = await voiceEngine.stopRecording();
+
+            // 2. Transcribe
             const { text } = await voiceEngine.transcribe(audioBlob, selectedLanguage);
+
+            if (!text.trim()) {
+                // If silence/empty, usually we ask clarification or just listen again?
+                // Let's listen again to be non-intrusive.
+                if (isSessionActive.current) startListeningLoop();
+                return;
+            }
+
             setCurrentTranscript(text);
             addMessage({ role: 'user', content: text });
 
-            // Get AI response
-            const aiResponse = await aiInterviewer.current.getResponse(text);
-            setCurrentAIResponse(aiResponse);
-            addMessage({ role: 'ai', content: aiResponse });
+            // 3. Get AI Response
+            const response = await aiInterviewer.current?.getResponse(text) || "I didn't catch that.";
+            setCurrentAIResponse(response);
+            addMessage({ role: 'ai', content: response });
 
-            // Speak AI response
-            setIsSpeaking(true);
-            await voiceEngine.speak(aiResponse, selectedLanguage);
-            setIsSpeaking(false);
+            // 4. Speak Response
+            setStatus('speaking');
 
-            // Clear transcript after a moment
-            setTimeout(() => setCurrentTranscript(''), 2000);
+            // Check for readiness in AI response
+            const readinessPhrases = ["ready to generate", "all the information I need", "generate the SOP now"];
+            if (readinessPhrases.some(p => response.toLowerCase().includes(p))) {
+                setShowGenerateButton(true);
+            }
+
+            await voiceEngine.speak(response, selectedLanguage);
+
+            // 5. Loop back to listening
+            if (isSessionActive.current && !showGenerateButton) {
+                startListeningLoop();
+            }
+
         } catch (error) {
-            console.error('Processing error:', error);
-            setIsRecording(false);
-            setIsSpeaking(false);
+            console.error("Turn processing failed:", error);
+            if (isSessionActive.current) startListeningLoop();
+        }
+    };
+
+    // Manual override if VAD fails
+    const forceStopRecording = () => {
+        if (status === 'listening') {
+            completeTurn();
         }
     };
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-primary-700 via-primary-600 to-primary-500 flex flex-col items-center justify-between p-6 safe-area-top safe-area-bottom">
+        <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-between p-6 safe-area-top safe-area-bottom">
             {/* Header */}
-            <div className="w-full max-w-md">
-                <div className="glass rounded-lg p-4 text-white text-center">
-                    <h2 className="text-sm font-medium opacity-90">Drive Mode</h2>
-                    <p className="text-xs opacity-75 mt-1">Hands-free voice documentation</p>
+            <div className="w-full max-w-md sticky top-0 bg-gray-50 pt-2 pb-4 z-10">
+                <div className="bg-white shadow-sm rounded-lg p-4 text-center border border-gray-200">
+                    <h2 className="text-lg font-bold text-gray-900">
+                        {status === 'idle' ? 'Drive Mode' : isComplete ? 'SOP Generated' : 'Session Active'}
+                    </h2>
+                    <p className="text-sm text-gray-500 mt-1">
+                        {status === 'idle' ? 'Hands-free voice documentation' : isComplete ? 'Success' : 'Tap Stop to end session'}
+                    </p>
                 </div>
             </div>
 
-            {/* Transcript Display */}
-            <div className="w-full max-w-2xl space-y-4">
-                {currentTranscript && (
-                    <div className="glass rounded-lg p-4">
-                        <p className="text-xs text-white/60 mb-1">You said:</p>
-                        <p className="text-white text-lg">{currentTranscript}</p>
-                    </div>
-                )}
+            {/* Floating Generate Button */}
+            {showGenerateButton && !isComplete && (
+                <div className="fixed top-24 left-0 right-0 z-20 flex justify-center animate-bounce">
+                    <button
+                        onClick={handleGenerateSOP}
+                        disabled={isGenerating}
+                        className="btn-primary py-4 px-8 rounded-2xl shadow-2xl shadow-primary/40 text-lg font-bold scale-110"
+                    >
+                        {isGenerating ? 'Generating SOP...' : 'Generate SOP Now'}
+                    </button>
+                </div>
+            )}
 
-                {currentAIResponse && (
-                    <div className="glass rounded-lg p-4">
-                        <p className="text-xs text-white/60 mb-1">AI:</p>
-                        <p className="text-white text-lg">{currentAIResponse}</p>
+            {/* Content Area */}
+            <div className="w-full max-w-2xl flex-1 flex flex-col justify-center space-y-6">
+                {status === 'idle' ? (
+                    <div className="text-center text-gray-400">
+                        <p>Tap the microphone to start.</p>
+                        <p className="text-sm mt-2">I will listen automatically when you speak.</p>
                     </div>
-                )}
-
-                {isSpeaking && (
-                    <div className="text-center">
-                        <div className="inline-flex items-center gap-2 text-white/80 text-sm">
-                            <span className="animate-pulse">Speaking...</span>
+                ) : (
+                    <>
+                        {/* Status Indicator */}
+                        <div className="text-center">
+                            <span className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold transition-colors duration-300 ${status === 'listening' ? 'bg-red-100 text-red-700' :
+                                status === 'speaking' ? 'bg-blue-100 text-blue-700' :
+                                    'bg-yellow-100 text-yellow-700'
+                                }`}>
+                                {status === 'listening' && <div className="w-2 h-2 rounded-full bg-red-600 animate-pulse" />}
+                                {status === 'speaking' && <div className="w-2 h-2 rounded-full bg-blue-600 animate-bounce" />}
+                                {status === 'processing' && <RefreshCw className="w-4 h-4 animate-spin" />}
+                                {status === 'listening' ? 'Listening...' :
+                                    status === 'speaking' ? 'Klaro Speaking...' :
+                                        'Thinking...'}
+                            </span>
                         </div>
-                    </div>
+
+                        {/* Transcript Cards */}
+                        {currentTranscript && (
+                            <div className="bg-white rounded-xl p-6 shadow-md border border-gray-100 animate-in fade-in slide-in-from-bottom-4">
+                                <p className="text-xs font-semibold text-gray-400 mb-2 uppercase">You Said:</p>
+                                <p className="text-gray-800 text-xl font-medium leading-relaxed">{currentTranscript}</p>
+                            </div>
+                        )}
+
+                        {currentAIResponse && (
+                            <div className={`bg-blue-50 rounded-xl p-6 shadow-md border border-blue-100 transition-opacity duration-500 ${status === 'speaking' ? 'opacity-100' : 'opacity-75'}`}>
+                                <p className="text-xs font-semibold text-blue-400 mb-2 uppercase">Klaro:</p>
+                                <p className="text-gray-800 text-xl font-medium leading-relaxed">{currentAIResponse}</p>
+                            </div>
+                        )}
+                    </>
                 )}
             </div>
 
-            {/* Microphone Button */}
-            <div className="flex flex-col items-center gap-6">
-                <button
-                    onMouseDown={handlePressStart}
-                    onMouseUp={handlePressEnd}
-                    onMouseLeave={handlePressEnd}
-                    onTouchStart={handlePressStart}
-                    onTouchEnd={handlePressEnd}
-                    onTouchCancel={handlePressEnd}
-                    className={`mic-button ${isRecording ? 'active' : ''}`}
-                    disabled={isSpeaking}
-                >
-                    {isRecording ? (
-                        <StopCircle className="w-20 h-20 text-white" />
-                    ) : (
-                        <Mic className="w-20 h-20 text-white" />
-                    )}
-                </button>
+            {/* Controls */}
+            <div className="flex flex-col items-center gap-6 pb-8 pt-4">
+                {isComplete ? (
+                    <button
+                        onClick={() => window.location.href = '/'}
+                        className="btn-primary w-64 py-5 rounded-2xl text-xl font-bold font-heading shadow-xl"
+                    >
+                        Return to Dashboard
+                    </button>
+                ) : status === 'idle' ? (
+                    <button
+                        onClick={handleStartSession}
+                        className="w-24 h-24 rounded-full bg-blue-600 hover:bg-blue-700 shadow-xl flex items-center justify-center transition-transform hover:scale-105 active:scale-95 ring-4 ring-blue-100"
+                    >
+                        <Play className="w-10 h-10 text-white ml-1" />
+                    </button>
+                ) : (
+                    <div className="flex items-center gap-8">
+                        {status === 'listening' && (
+                            <button
+                                onClick={forceStopRecording}
+                                className="w-16 h-16 rounded-full bg-red-100 hover:bg-red-200 text-red-600 flex items-center justify-center transition-colors"
+                                title="Force Send"
+                            >
+                                <Mic className="w-8 h-8" />
+                            </button>
+                        )}
 
-                <div className="text-center space-y-2">
-                    <p className="text-white font-medium">
-                        {isRecording ? 'Release to send' : 'Hold to talk'}
+                        <button
+                            onClick={handleStopSession}
+                            className="w-24 h-24 rounded-full bg-gray-800 hover:bg-gray-900 shadow-xl flex items-center justify-center transition-transform hover:scale-105 active:scale-95 ring-4 ring-gray-200"
+                        >
+                            <Square className="w-8 h-8 text-white fill-current" />
+                        </button>
+                    </div>
+                )}
+
+                <div className="text-center pb-safe">
+                    <p className="text-gray-900 font-semibold text-lg">
+                        {status === 'idle' ? 'Start Session' : status === 'listening' ? 'Listening...' : status === 'speaking' ? 'Speaking...' : 'Processing'}
                     </p>
-                    <p className="text-white/70 text-sm">
-                        {isPressing && !isRecording ? 'Keep holding...' : ''}
+                    <p className="text-gray-500 text-sm">
+                        {status === 'idle' ? 'Tap to begin hands-free mode' : 'Tap Square to stop session'}
                     </p>
                 </div>
             </div>

@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
 
 @theme {
   --color-primary: #0066CC;
@@ -21,6 +22,99 @@
   --shadow-mic-active: 0 0 40px rgba(0, 102, 204, 0.6);
 }
 
+/* Dark mode overrides */
+.dark {
+  --color-primary: #4D9BFF;
+  --color-primary-dark: #3385DB;
+  --color-primary-light: #80B8FF;
+
+  --color-background: #0F1117;
+  --color-background-alt: #161923;
+  --color-background-dark: #1E2130;
+
+  --color-text: #E8ECF4;
+  --color-text-light: #A0AEC0;
+  --color-text-lighter: #718096;
+}
+
+/* Dark mode: override Tailwind's hardcoded colors */
+.dark .bg-white {
+  background-color: #1A1D2B !important;
+}
+
+.dark .bg-slate-50,
+.dark .bg-gray-50 {
+  background-color: #161923 !important;
+}
+
+.dark .border-gray-100,
+.dark .border-slate-100 {
+  border-color: #2D3348 !important;
+}
+
+.dark .border-gray-200,
+.dark .border-slate-200 {
+  border-color: #3D4460 !important;
+}
+
+.dark .text-slate-900 {
+  color: #E8ECF4 !important;
+}
+
+.dark .text-slate-700 {
+  color: #CBD5E0 !important;
+}
+
+.dark .text-slate-600,
+.dark .text-slate-500 {
+  color: #A0AEC0 !important;
+}
+
+.dark .text-slate-400,
+.dark .text-slate-300 {
+  color: #718096 !important;
+}
+
+.dark .bg-blue-50,
+.dark .bg-indigo-50,
+.dark .bg-emerald-50,
+.dark .bg-violet-50,
+.dark .bg-green-50,
+.dark .bg-rose-50,
+.dark .bg-amber-50,
+.dark .bg-red-50 {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+.dark .bg-blue-100,
+.dark .bg-indigo-100,
+.dark .bg-emerald-100,
+.dark .bg-violet-100,
+.dark .bg-amber-100 {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+.dark .shadow-2xl {
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5) !important;
+}
+
+.dark .shadow-sm {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3) !important;
+}
+
+.dark input,
+.dark textarea,
+.dark select {
+  background-color: #1E2130 !important;
+  border-color: #3D4460 !important;
+  color: #E8ECF4 !important;
+}
+
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #5A6178 !important;
+}
+
 @keyframes micPulse {
 
   0%,
@@ -38,6 +132,7 @@
 @layer base {
   body {
     @apply bg-background text-text font-sans antialiased;
+    transition: background-color 0.3s ease, color 0.3s ease;
   }
 
   h1,

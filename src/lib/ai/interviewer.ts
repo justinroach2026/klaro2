@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import { type LanguageCode } from '../../store';
+import { type LanguageCode, type IndustryCode, type CountryCode, SUPPORTED_INDUSTRIES, SUPPORTED_COUNTRIES } from '../../store';
 
 const openai = new OpenAI({
     apiKey: import.meta.env.VITE_OPENAI_API_KEY,
@@ -137,11 +137,37 @@ interface Message {
 export class AIInterviewer {
     private conversationHistory: Message[] = [];
     private language: LanguageCode;
+    private industry: IndustryCode;
+    private country: CountryCode;
+    private agenticPrompt: string | null;
 
-    constructor(language: LanguageCode = 'en') {
+    constructor(
+        language: LanguageCode = 'en',
+        industry: IndustryCode = 'other',
+        country: CountryCode = 'gb',
+        agenticPrompt: string | null = null
+    ) {
         this.language = language;
+        this.industry = industry;
+        this.country = country;
+        this.agenticPrompt = agenticPrompt;
+
+        const industryInfo = SUPPORTED_INDUSTRIES[industry];
+        const countryInfo = SUPPORTED_COUNTRIES[country];
+
+        const industryContext = `\n\nINDUSTRY CONTEXT: The user works in the ${industryInfo.name} industry (${industryInfo.description}). 
+        REGIONAL CONTEXT: The user is located in ${countryInfo.name}. 
+        Use your knowledge of ${countryInfo.name}'s specific laws and ${industryInfo.name} regulations to:
+        1. Anticipate common steps in their processes.
+        2. Proactively ask about industry-standard requirements (e.g., safety, compliance, quality control, data privacy laws in ${countryInfo.name}).
+        3. Suggest best practices tailored to this sector in this region.`;
+
+        const systemContent = agenticPrompt
+            ? `${agenticPrompt}\n\n${industryContext}`
+            : `${SYSTEM_PROMPTS[language]}${industryContext}`;
+
         this.conversationHistory = [
-            { role: 'system', content: SYSTEM_PROMPTS[language] },
+            { role: 'system', content: systemContent },
         ];
     }
 
@@ -206,37 +232,36 @@ export class AIInterviewer {
         const prompts: Record<LanguageCode, string> = {
             en: `Based on our conversation, generate a comprehensive Standard Operating Procedure document titled "${title}".
             
-Format the SOP in Markdown with the following structured sections:
+Format the SOP in professional Markdown with the following structured sections:
 # ${title}
 
-## Purpose
+## 📝 Purpose
 A clear, concise statement of why this process exists and what it achieves.
 
-## Scope
-Define exactly who this applies to, where it is used, and in what situations.
+## 👥 Roles & Responsibilities
+List exactly who is involved in this process and what their specific duties are. Use a bulleted list.
 
-## Responsibilities
-List the roles or individuals responsible for executing and overseeing this process.
+## 🛠 Prerequisites & Tools
+List all required hardware, software, physical tools, or specific environment settings needed before beginning.
 
-## Prerequisites
-Required resources, tools, hardware, software, or permissions needed before starting.
+## 🏁 Step-by-Step Procedure
+Provide extremely detailed, numbered actions in chronological order. 
+- Use **bold** for key terms, buttons, or critical values.
+- Use sub-steps (a, b, c) if a task is complex.
+- Keep sentences short and actionable.
 
-## Step-by-Step Procedure
-Detailed, numbered actions in chronological order. Use active voice and be precise.
+## 🎯 Quality Standards
+List the specific criteria that must be met for this SOP to be considered "completed successfully".
 
-## Quality Standards & Success Criteria
-How to know the process has been done correctly and meets quality requirements.
+## 💡 Pro Tips & Best Practices
+Include shortcuts, safety warnings, or "expert knowledge" mentioned during the interview.
 
-## Tips & Best Practices
-Pro-tips for efficiency, safety, and high-quality results.
+## ⚠️ Common Issues & Troubleshooting
+Identify what usually goes wrong and provide the exact steps to fix it.
 
-## Common Issues & Troubleshooting
-Potential problems, edge cases, and how to handle them.
-
-## Related Documentation
-Links or references to other SOPs, forms, or manuals mentioned.
-
-Make it professional, actionable, and formatted for high readability. Use bolding for emphasis where appropriate.`,
+---
+**Document Status:** FINAL | **Format:** KLARO STANDARD V2
+`,
 
             es: `Basado en nuestra conversación, genera un documento completo de Procedimiento Operativo Estándar titulado "${title}".
 
@@ -484,7 +509,8 @@ Spraw, aby było profesjonalne, możliwe do wykonania i sformatowane pod kątem 
      * Extract metadata (tags, department, estimated time) from the conversation
      */
     async extractMetadata(title: string): Promise<{ tags: string[], department?: string, estimatedTime?: string }> {
-        const metadataPrompt = `Based on the conversation above about the process "${title}", extract the following metadata in JSON format:
+        const industryInfo = SUPPORTED_INDUSTRIES[this.industry];
+        const metadataPrompt = `Based on the conversation above about the process "${title}" in the ${industryInfo.name} industry, extract the following metadata in JSON format:
         {
             "tags": ["tag1", "tag2"],
             "department": "Name of department (e.g., HR, Sales, IT, Ops)",
