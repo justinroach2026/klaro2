@@ -13,6 +13,7 @@
     "@stripe/stripe-js": "^8.6.1",
     "@supabase/supabase-js": "^2.90.1",
     "@tailwindcss/postcss": "^4.1.18",
+    "@tailwindcss/typography": "^0.5.19",
     "@tailwindcss/vite": "^4.1.18",
     "lucide-react": "^0.562.0",
     "openai": "^6.16.0",
