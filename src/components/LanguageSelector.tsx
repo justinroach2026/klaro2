@@ -5,7 +5,7 @@ export default function LanguageSelector() {
     const { selectedLanguage, setSelectedLanguage } = useStore();
 
     return (
-        <div className="w-full max-w-md mx-auto p-6 safe-area-top">
+        <div className="w-full max-w-2xl mx-auto p-4 md:p-6 safe-area-top">
             <div className="bg-white rounded-2xl shadow-xl p-8">
                 <div className="flex flex-col items-center mb-8">
                     <div className="w-16 h-16 bg-primary rounded-full flex items-center justify-center mb-4">
@@ -19,7 +19,7 @@ export default function LanguageSelector() {
                     </p>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     {Object.entries(SUPPORTED_LANGUAGES).map(([code, lang]) => (
                         <button
                             key={code}

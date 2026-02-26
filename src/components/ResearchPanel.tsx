@@ -64,8 +64,8 @@ export default function ResearchPanel({ onContinue, onBack }: ResearchPanelProps
     }, [selectedIndustry, selectedCountry]);
 
     return (
-        <div className="w-full max-w-3xl mx-auto p-6">
-            <div className="bg-white rounded-3xl shadow-2xl p-8 border border-slate-100 overflow-hidden relative">
+        <div className="w-full max-w-5xl mx-auto p-4 md:p-6">
+            <div className="bg-white rounded-3xl shadow-2xl p-6 md:p-10 border border-slate-100 overflow-hidden relative">
                 {isResearching && (
                     <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-10 flex flex-col items-center justify-center">
                         <RefreshCw className="w-12 h-12 text-indigo-600 animate-spin mb-4" />
@@ -84,7 +84,7 @@ export default function ResearchPanel({ onContinue, onBack }: ResearchPanelProps
                     </div>
                 </div>
 
-                <div className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
                     <div className="bg-slate-50 rounded-2xl p-6 border border-slate-100">
                         <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
                             <Search className="w-4 h-4" />

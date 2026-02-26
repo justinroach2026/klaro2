@@ -1,10 +1,36 @@
-import OpenAI from 'openai';
 import { type LanguageCode, type IndustryCode, type CountryCode, SUPPORTED_INDUSTRIES, SUPPORTED_COUNTRIES } from '../../store';
 
-const openai = new OpenAI({
-    apiKey: import.meta.env.OPENAI_API_KEY,
-    dangerouslyAllowBrowser: true, // For MVP - move to Edge Function in production
-});
+/**
+ * Call the server-side AI proxy instead of the OpenAI SDK directly.
+ * The API key stays server-side only — never exposed to the browser.
+ */
+async function chatCompletion(options: {
+    messages: Message[];
+    temperature?: number;
+    max_tokens?: number;
+    model?: string;
+    response_format?: { type: string };
+}): Promise<string> {
+    const res = await fetch('/api/ai/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            messages: options.messages,
+            temperature: options.temperature ?? 0.7,
+            max_tokens: options.max_tokens,
+            model: options.model ?? 'gpt-4o',
+            response_format: options.response_format,
+        }),
+    });
+
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Unknown server error' }));
+        throw new Error(err.error?.message || err.error || `AI proxy error (${res.status})`);
+    }
+
+    const data = await res.json();
+    return data.choices?.[0]?.message?.content || '';
+}
 
 // System prompts for different languages
 const SYSTEM_PROMPTS: Record<LanguageCode, string> = {
@@ -175,20 +201,47 @@ export class AIInterviewer {
      * Get AI response to user input
      */
     async getResponse(userMessage: string): Promise<string> {
-        this.conversationHistory.push({
+        // 1. Detect URLs in the user's message
+        const urlRegex = /(https?:\/\/[^\s]+)/g;
+        const urls = userMessage.match(urlRegex) || [];
+
+        let contextAddition = '';
+
+        // 2. Fetch content for any detected URLs
+        if (urls.length > 0) {
+            for (const url of urls) {
+                try {
+                    const res = await fetch('/api/ai/fetch-url', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ url })
+                    });
+                    const data = await res.json();
+                    if (data.success && data.content) {
+                        contextAddition += `\n\n--- Content from ${url} ---\n${data.content}\n-----------------------------`;
+                    }
+                } catch (error) {
+                    console.error(`Failed to fetch URL ${url}:`, error);
+                }
+            }
+        }
+
+        // 3. Append to history with context if available
+        const finalMessageObject: Message = {
             role: 'user',
-            content: userMessage,
-        });
+            content: contextAddition
+                ? `${userMessage}\n\n[System Note: The user shared links. Here is the extracted text from those links to help you respond:]${contextAddition}`
+                : userMessage,
+        };
+
+        this.conversationHistory.push(finalMessageObject);
 
         try {
-            const response = await openai.chat.completions.create({
-                model: 'gpt-4o',
+            const aiMessage = await chatCompletion({
                 messages: this.conversationHistory,
                 temperature: 0.7,
-                max_tokens: 300, // Keep responses concise
+                max_tokens: 500, // slightly increased to account for larger context reasoning
             });
-
-            const aiMessage = response.choices[0].message.content || '';
 
             this.conversationHistory.push({
                 role: 'assistant',
@@ -205,20 +258,17 @@ export class AIInterviewer {
     /**
      * Generate SOP from interview transcript
      */
-    async generateSOP(title: string): Promise<string> {
-        const sopPrompt = this.getSOPPrompt(title);
+    async generateSOP(title: string, authorInfo = ''): Promise<string> {
+        const sopPrompt = this.getSOPPrompt(title, authorInfo);
 
         try {
-            const response = await openai.chat.completions.create({
-                model: 'gpt-4o',
+            return await chatCompletion({
                 messages: [
                     ...this.conversationHistory,
                     { role: 'user', content: sopPrompt },
                 ],
-                temperature: 0.5, // More deterministic for SOP generation
+                temperature: 0.5,
             });
-
-            return response.choices[0].message.content || '';
         } catch (error) {
             console.error('SOP generation error:', error);
             throw new Error('Failed to generate SOP');
@@ -228,12 +278,17 @@ export class AIInterviewer {
     /**
      * Get SOP generation prompt in the appropriate language
      */
-    private getSOPPrompt(title: string): string {
+    private getSOPPrompt(title: string, authorInfo: string): string {
+        const currentDate = new Date().toLocaleDateString(this.language, { year: 'numeric', month: 'long', day: 'numeric' });
+        const reviewDate = new Date(Date.now() + 180 * 24 * 60 * 60 * 1000).toLocaleDateString(this.language, { year: 'numeric', month: 'long', day: 'numeric' }); // 6 months from now
+        const authorSection = authorInfo ? `\n\n**Created By:** ${authorInfo}\n**Created Date:** ${currentDate}\n**Next Review Date:** ${reviewDate}` : '';
+
         const prompts: Record<LanguageCode, string> = {
             en: `Based on our conversation, generate a comprehensive Standard Operating Procedure document titled "${title}".
             
 Format the SOP in professional Markdown with the following structured sections:
-# ${title}
+
+# ${title} ${authorSection}
 
 ## 📝 Purpose
 A clear, concise statement of why this process exists and what it achieves.
@@ -266,7 +321,8 @@ Identify what usually goes wrong and provide the exact steps to fix it.
             es: `Basado en nuestra conversación, genera un documento completo de Procedimiento Operativo Estándar titulado "${title}".
 
 Formatea el POE en Markdown con las siguientes secciones estructuradas:
-# ${title}
+
+# ${title} ${authorSection}
 
 ## Propósito
 Una declaración clara y concisa de por qué existe este proceso y qué logra.
@@ -519,18 +575,16 @@ Spraw, aby było profesjonalne, możliwe do wykonania i sformatowane pod kątem 
         Return ONLY the JSON.`;
 
         try {
-            const response = await openai.chat.completions.create({
-                model: 'gpt-4o',
+            const content = await chatCompletion({
                 messages: [
                     ...this.conversationHistory,
                     { role: 'user', content: metadataPrompt },
                 ],
                 temperature: 0.3,
-                response_format: { type: 'json_object' }
+                response_format: { type: 'json_object' },
             });
 
-            const content = response.choices[0].message.content || '{}';
-            return JSON.parse(content);
+            return JSON.parse(content || '{}');
         } catch (error) {
             console.error('Metadata extraction error:', error);
             return { tags: [] };

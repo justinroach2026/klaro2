@@ -26,11 +26,17 @@ export default function OfficeMode() {
 
     const aiInterviewer = useRef(new AIInterviewer(selectedLanguage, selectedIndustry, selectedCountry, profile?.agentic_prompt));
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    const scrollContainerRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
-        // Auto-scroll to bottom
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [interviewMessages]);
+        // Auto-scroll to bottom — scroll the container itself for reliable behavior
+        const container = scrollContainerRef.current;
+        if (container) {
+            requestAnimationFrame(() => {
+                container.scrollTop = container.scrollHeight;
+            });
+        }
+    }, [interviewMessages, isProcessing]);
 
     useEffect(() => {
         // Start with AI greeting
@@ -86,6 +92,10 @@ export default function OfficeMode() {
         const text = inputText.trim();
         setInputText('');
         setIsProcessing(true);
+        setTimeout(() => {
+            const el = document.getElementById('chat-input');
+            if (el) el.style.height = 'auto';
+        }, 10);
 
         try {
             addMessage({ role: 'user', content: text });
@@ -102,15 +112,24 @@ export default function OfficeMode() {
     const handleGenerateSOP = async () => {
         setIsGenerating(true);
         try {
-            const { user, team } = useStore.getState();
-            if (!user || !team) throw new Error('Not authenticated');
+            const { user, team, profile } = useStore.getState();
+            if (!user || (!team && !profile?.team_id)) throw new Error('Not authenticated - Missing Team/User Data');
+            const teamId = team?.id || profile?.team_id;
 
             // Find process title from conversation
             const firstUserMessage = interviewMessages.find(m => m.role === 'user')?.content || 'Untitled SOP';
             const title = firstUserMessage.length > 50 ? firstUserMessage.substring(0, 50) + '...' : firstUserMessage;
 
+            // Build company/user info string for the prompt
+            const authorInfo = `
+Author: ${profile?.full_name || user.email || 'Author'}
+Company: ${profile?.company_name || team?.name || 'Company'}
+${profile?.company_website ? `Website: ${profile.company_website}` : ''}
+${profile?.company_address ? `Location: ${profile.company_address}` : ''}
+            `.trim();
+
             // 1. Generate Content with enhanced structure
-            const content = await aiInterviewer.current.generateSOP(title);
+            const content = await aiInterviewer.current.generateSOP(title, authorInfo);
 
             // 2. Extract Metadata automatically
             const metadata = await aiInterviewer.current.extractMetadata(title);
@@ -119,7 +138,7 @@ export default function OfficeMode() {
             const { error } = await supabase!
                 .from('sops')
                 .insert({
-                    team_id: team.id,
+                    team_id: teamId,
                     title: title,
                     content: content,
                     language: selectedLanguage,
@@ -171,7 +190,7 @@ export default function OfficeMode() {
     };
 
     return (
-        <div className="min-h-screen bg-background flex flex-col">
+        <div className="h-screen bg-background flex flex-col overflow-hidden">
             {/* Header */}
             <div className="bg-white border-b border-gray-200 p-4 safe-area-top">
                 <div className="max-w-4xl mx-auto flex justify-between items-center">
@@ -192,7 +211,7 @@ export default function OfficeMode() {
             </div>
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto p-4">
+            <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4">
                 <div className="max-w-4xl mx-auto space-y-4">
                     {interviewMessages.map((message, index) => (
                         <div
@@ -201,7 +220,7 @@ export default function OfficeMode() {
                         >
                             <div className={`chat-bubble ${message.role}`}>
                                 {message.role === 'ai' ? (
-                                    <div className="prose prose-sm max-w-none prose-p:mb-2 prose-p:last:mb-0 prose-ul:list-disc prose-ul:list-inside prose-ol:list-decimal prose-ol:list-inside">
+                                    <div className="prose prose-sm max-w-none prose-p:mb-2 prose-p:last:mb-0 prose-ul:list-disc prose-ol:list-decimal prose-ul:ml-5 prose-ol:ml-5 prose-li:pl-1 text-inherit">
                                         <ReactMarkdown>{message.content}</ReactMarkdown>
                                     </div>
                                 ) : (
@@ -238,7 +257,12 @@ export default function OfficeMode() {
                 {isComplete ? (
                     <div className="max-w-4xl mx-auto flex flex-col items-center py-4">
                         <button
-                            onClick={() => window.location.href = '/'} // This will trigger App's re-render to dashboard
+                            onClick={() => {
+                                // Find the close/exit button that app.tsx uses and click it, 
+                                // or update a state route if we have one. In App.tsx it's fixed button.
+                                // We can trigger a reload to reset the state safely to /
+                                window.location.href = '/';
+                            }} // This will trigger App's re-render to dashboard
                             className="btn-primary w-full max-w-sm py-4 rounded-xl font-bold flex items-center justify-center gap-2"
                         >
                             Return to Dashboard
@@ -257,13 +281,23 @@ export default function OfficeMode() {
                             {isRecording ? <Mic className="w-5 h-5 animate-pulse" /> : <Mic className="w-5 h-5" />}
                         </button>
 
-                        <input
-                            type="text"
+                        <textarea
+                            id="chat-input"
                             value={inputText}
-                            onChange={(e) => setInputText(e.target.value)}
-                            onKeyPress={(e) => e.key === 'Enter' && handleSendText()}
-                            placeholder="Type your message..."
-                            className="input-primary flex-1"
+                            onChange={(e) => {
+                                setInputText(e.target.value);
+                                e.target.style.height = 'auto';
+                                e.target.style.height = e.target.scrollHeight + 'px';
+                            }}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter' && !e.shiftKey) {
+                                    e.preventDefault();
+                                    handleSendText();
+                                }
+                            }}
+                            placeholder="Type your message... (Shift+Enter for new line)"
+                            className="input-primary flex-1 resize-none overflow-y-auto min-h-[46px] max-h-32 py-2.5"
+                            rows={1}
                             disabled={isProcessing || isRecording || isGenerating}
                         />
 

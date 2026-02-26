@@ -17,13 +17,13 @@ export default function CountrySelector() {
     const sortedRegions = regionOrder.filter(r => regions[r]);
 
     return (
-        <div className="w-full max-w-2xl mx-auto p-6">
-            <div className="bg-white rounded-3xl shadow-2xl p-8 border border-slate-100">
+        <div className="w-full max-w-5xl mx-auto p-4 md:p-6">
+            <div className="bg-white rounded-3xl shadow-2xl p-6 md:p-8 border border-slate-100">
                 <div className="flex flex-col items-center mb-10">
-                    <div className="w-20 h-20 bg-indigo-600 rounded-2xl flex items-center justify-center mb-6 shadow-xl shadow-indigo-500/30 transform rotate-3">
-                        <Globe className="w-10 h-10 text-white" />
+                    <div className="w-16 h-16 md:w-20 md:h-20 bg-indigo-600 rounded-2xl flex items-center justify-center mb-4 md:mb-6 shadow-xl shadow-indigo-500/30 transform rotate-3">
+                        <Globe className="w-8 h-8 md:w-10 md:h-10 text-white" />
                     </div>
-                    <h1 className="text-3xl font-heading font-bold text-slate-900 mb-3">
+                    <h1 className="text-2xl md:text-3xl font-heading font-bold text-slate-900 mb-2 md:mb-3">
                         Where are you located?
                     </h1>
                     <p className="text-slate-500 text-center max-w-sm font-medium">
@@ -31,11 +31,11 @@ export default function CountrySelector() {
                     </p>
                 </div>
 
-                <div className="space-y-6 max-h-[50vh] overflow-y-auto pr-2">
+                <div className="space-y-6 max-h-[60vh] overflow-y-auto pr-2">
                     {sortedRegions.map((region) => (
                         <div key={region}>
                             <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-300 mb-3 px-1">{region}</h3>
-                            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
                                 {regions[region].map(([code, country]) => (
                                     <button
                                         key={code}

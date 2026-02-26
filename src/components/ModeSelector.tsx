@@ -5,8 +5,8 @@ export default function ModeSelector({ onContinue }: { onContinue: () => void })
     const { interviewMode, setInterviewMode } = useStore();
 
     return (
-        <div className="w-full max-w-2xl mx-auto p-6 safe-area-top">
-            <div className="bg-white rounded-2xl shadow-xl p-8">
+        <div className="w-full max-w-4xl mx-auto p-4 md:p-6 safe-area-top">
+            <div className="bg-white rounded-3xl shadow-xl p-6 md:p-10 border border-slate-100">
                 <div className="text-center mb-8">
                     <h1 className="text-3xl font-heading font-bold text-text mb-2">
                         Choose Your Mode
@@ -21,8 +21,8 @@ export default function ModeSelector({ onContinue }: { onContinue: () => void })
                     <button
                         onClick={() => setInterviewMode('drive')}
                         className={`p-8 rounded-xl border-2 transition-all text-left ${interviewMode === 'drive'
-                                ? 'border-primary bg-primary/5 shadow-lg scale-105'
-                                : 'border-gray-200 hover:border-gray-300 hover:shadow'
+                            ? 'border-primary bg-primary/5 shadow-lg scale-105'
+                            : 'border-gray-200 hover:border-gray-300 hover:shadow'
                             }`}
                     >
                         <div className="w-14 h-14 bg-gradient-to-br from-primary to-primary-dark rounded-full flex items-center justify-center mb-4">
@@ -46,8 +46,8 @@ export default function ModeSelector({ onContinue }: { onContinue: () => void })
                     <button
                         onClick={() => setInterviewMode('office')}
                         className={`p-8 rounded-xl border-2 transition-all text-left ${interviewMode === 'office'
-                                ? 'border-primary bg-primary/5 shadow-lg scale-105'
-                                : 'border-gray-200 hover:border-gray-300 hover:shadow'
+                            ? 'border-primary bg-primary/5 shadow-lg scale-105'
+                            : 'border-gray-200 hover:border-gray-300 hover:shadow'
                             }`}
                     >
                         <div className="w-14 h-14 bg-gradient-to-br from-primary to-primary-dark rounded-full flex items-center justify-center mb-4">
