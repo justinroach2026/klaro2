@@ -75,6 +75,7 @@ interface Profile {
     team_id: string;
     full_name: string | null;
     language_preference: string;
+    role?: 'creator' | 'viewer';
     industry?: IndustryCode;
     country?: CountryCode;
     agentic_prompt?: string;

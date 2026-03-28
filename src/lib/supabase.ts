@@ -46,6 +46,7 @@ export interface Database {
                     industry: string | null;
                     country: string | null;
                     agentic_prompt: string | null;
+                    role: 'creator' | 'viewer';
                     company_name: string | null;
                     company_logo_url: string | null;
                     company_website: string | null;
@@ -68,10 +69,15 @@ export interface Database {
                     version: number;
                     change_summary: string | null;
                     created_by: string | null;
+                    owner_id: string | null;
+                    review_interval_days: number | null;
+                    last_reviewed_at: string | null;
+                    next_review_at: string | null;
+                    related_sop_ids: string[];
                     created_at: string;
                     updated_at: string;
                 };
-                Insert: Omit<Database['public']['Tables']['sops']['Row'], 'id' | 'created_at' | 'updated_at'>;
+                Insert: Omit<Database['public']['Tables']['sops']['Row'], 'id' | 'created_at' | 'updated_at' | 'next_review_at'>;
                 Update: Partial<Database['public']['Tables']['sops']['Insert']>;
             };
             sop_history: {
@@ -183,6 +189,78 @@ export const updateProfile = async (userId: string, updates: any) => {
         .eq('id', userId)
         .select()
         .single() || { data: null, error: new Error('Supabase not initialized') };
+
+    if (error) throw error;
+    return data;
+};
+
+// ─── Process Integrity Helpers ──────────────────────────────────────────────
+
+export const getOverdueSOPs = async (userId: string) => {
+    const now = new Date().toISOString();
+    const { data, error } = await supabase
+        ?.from('sops')
+        .select('id, title, next_review_at, last_reviewed_at, review_interval_days, updated_at, version, owner_id')
+        .eq('owner_id', userId)
+        .not('next_review_at', 'is', null)
+        .lte('next_review_at', now)
+        .order('next_review_at', { ascending: true })
+        || { data: null, error: new Error('Supabase not initialized') };
+
+    if (error) throw error;
+    return data || [];
+};
+
+export const getRelatedSOPs = async (sopIds: string[]) => {
+    if (!sopIds || sopIds.length === 0) return [];
+    const { data, error } = await supabase
+        ?.from('sops')
+        .select('id, title, updated_at, version, language')
+        .in('id', sopIds)
+        || { data: null, error: new Error('Supabase not initialized') };
+
+    if (error) throw error;
+    return data || [];
+};
+
+export const markSOPReviewed = async (sopId: string) => {
+    const now = new Date().toISOString();
+    const { data, error } = await supabase
+        ?.from('sops')
+        .update({ last_reviewed_at: now })
+        .eq('id', sopId)
+        .select()
+        .single()
+        || { data: null, error: new Error('Supabase not initialized') };
+
+    if (error) throw error;
+    return data;
+};
+
+export const updateSOPOwnership = async (sopId: string, updates: {
+    owner_id?: string;
+    review_interval_days?: number | null;
+}) => {
+    const { data, error } = await supabase
+        ?.from('sops')
+        .update(updates)
+        .eq('id', sopId)
+        .select()
+        .single()
+        || { data: null, error: new Error('Supabase not initialized') };
+
+    if (error) throw error;
+    return data;
+};
+
+export const updateSOPRelatedIds = async (sopId: string, relatedIds: string[]) => {
+    const { data, error } = await supabase
+        ?.from('sops')
+        .update({ related_sop_ids: relatedIds })
+        .eq('id', sopId)
+        .select()
+        .single()
+        || { data: null, error: new Error('Supabase not initialized') };
 
     if (error) throw error;
     return data;

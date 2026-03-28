@@ -116,7 +116,7 @@ function App() {
   };
 
   return (
-    <div className="min-h-screen bg-background-alt font-sans">
+    <div className="min-h-screen bg-[#09090b] font-sans">
       {/* Auth View */}
       {currentView === 'auth' && <Auth />}
 
@@ -136,18 +136,18 @@ function App() {
 
       {/* Language Selection */}
       {currentView === 'language' && (
-        <div className="min-h-screen flex flex-col items-center justify-center p-6">
+        <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-[#09090b]">
           <LanguageSelector />
           <div className="w-full max-w-md mt-6 flex gap-3 px-6">
             <button
               onClick={() => setCurrentView('dashboard')}
-              className="btn-secondary flex-1"
+              className="flex-1 py-3.5 border border-white/8 rounded-xl text-white/50 font-semibold hover:bg-white/5 hover:text-white/70 transition-all text-sm"
             >
               Cancel
             </button>
             <button
               onClick={handleLanguageSelected}
-              className="btn-primary flex-1"
+              className="flex-1 py-3.5 rounded-xl bg-[#137fec] hover:bg-[#0f66bd] text-white font-bold text-sm tracking-wide transition-all shadow-lg shadow-[#137fec]/20"
             >
               Continue
             </button>
@@ -157,18 +157,18 @@ function App() {
 
       {/* Country Selection */}
       {currentView === 'country' && (
-        <div className="min-h-screen flex flex-col items-center justify-center p-6">
+        <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-[#09090b]">
           <CountrySelector />
           <div className="w-full max-w-md mt-6 flex gap-3 px-6">
             <button
               onClick={() => setCurrentView('language')}
-              className="btn-secondary flex-1"
+              className="flex-1 py-3.5 border border-white/8 rounded-xl text-white/50 font-semibold hover:bg-white/5 hover:text-white/70 transition-all text-sm"
             >
               Back
             </button>
             <button
               onClick={handleCountrySelected}
-              className="btn-primary flex-1"
+              className="flex-1 py-3.5 rounded-xl bg-[#137fec] hover:bg-[#0f66bd] text-white font-bold text-sm tracking-wide transition-all shadow-lg shadow-[#137fec]/20"
             >
               Continue
             </button>
@@ -178,18 +178,18 @@ function App() {
 
       {/* Industry Selection */}
       {currentView === 'industry' && (
-        <div className="min-h-screen flex flex-col items-center justify-center p-6">
+        <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-[#09090b]">
           <IndustrySelector />
-          <div className="w-full max-w-md mt-6 flex gap-3 px-6">
+          <div className="w-full max-w-5xl mt-6 flex gap-3 px-6">
             <button
               onClick={() => setCurrentView('country')}
-              className="btn-secondary flex-1"
+              className="flex-1 py-3.5 border border-white/8 rounded-xl text-white/50 font-semibold hover:bg-white/5 hover:text-white/70 transition-all text-sm"
             >
               Back
             </button>
             <button
               onClick={handleIndustrySelected}
-              className="btn-primary flex-1"
+              className="flex-1 py-3.5 rounded-xl bg-[#137fec] hover:bg-[#0f66bd] text-white font-bold text-sm tracking-wide transition-all shadow-lg shadow-[#137fec]/20"
             >
               Continue
             </button>
@@ -199,14 +199,14 @@ function App() {
 
       {/* Research View */}
       {currentView === 'research' && (
-        <div className="min-h-screen flex flex-col items-center justify-center p-6">
+        <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-[#09090b]">
           <ResearchPanel onContinue={() => setCurrentView('mode')} onBack={() => setCurrentView('industry')} />
         </div>
       )}
 
       {/* Mode Selection */}
       {currentView === 'mode' && (
-        <div className="min-h-screen flex flex-col items-center justify-center">
+        <div className="min-h-screen flex flex-col items-center justify-center bg-[#09090b]">
           <ModeSelector onContinue={handleModeSelected} />
         </div>
       )}
