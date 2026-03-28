@@ -111,6 +111,21 @@ export interface Database {
                 Insert: Omit<Database['public']['Tables']['interview_sessions']['Row'], 'id' | 'created_at'>;
                 Update: Partial<Database['public']['Tables']['interview_sessions']['Insert']>;
             };
+            sop_edit_suggestions: {
+                Row: {
+                    id: string;
+                    sop_id: string;
+                    suggested_by: string;
+                    suggested_title: string;
+                    suggested_content: string;
+                    status: 'pending' | 'approved' | 'rejected';
+                    created_at: string;
+                    resolved_at: string | null;
+                    resolved_by: string | null;
+                };
+                Insert: Omit<Database['public']['Tables']['sop_edit_suggestions']['Row'], 'id' | 'created_at' | 'resolved_at' | 'resolved_by' | 'status'>;
+                Update: Partial<Database['public']['Tables']['sop_edit_suggestions']['Insert']>;
+            };
         };
     };
 }
@@ -258,6 +273,74 @@ export const updateSOPRelatedIds = async (sopId: string, relatedIds: string[]) =
         ?.from('sops')
         .update({ related_sop_ids: relatedIds })
         .eq('id', sopId)
+        .select()
+        .single()
+        || { data: null, error: new Error('Supabase not initialized') };
+
+    if (error) throw error;
+    return data;
+};
+
+// ─── Phase 2 Helpers ────────────────────────────────────────────────────────
+
+// Fetch all previous versions of an SOP
+export const getSOPHistory = async (sopId: string) => {
+    const { data, error } = await supabase
+        ?.from('sop_history')
+        .select('*, profiles:created_by(full_name)')
+        .eq('sop_id', sopId)
+        .order('version', { ascending: false })
+        || { data: null, error: new Error('Supabase not initialized') };
+
+    if (error) throw error;
+    return data || [];
+};
+
+// Viewer creating a suggestion
+export const suggestSOPEdit = async (sopId: string, title: string, content: string) => {
+    const { data: { user } } = await supabase?.auth.getUser() || { data: { user: null } };
+    if (!user) throw new Error('Not authenticated');
+
+    const { data, error } = await supabase
+        ?.from('sop_edit_suggestions')
+        .insert({
+            sop_id: sopId,
+            suggested_by: user.id,
+            suggested_title: title,
+            suggested_content: content,
+        })
+        .select()
+        .single()
+        || { data: null, error: new Error('Supabase not initialized') };
+
+    if (error) throw error;
+    return data;
+};
+
+// Creator viewing pending suggestions for their SOPs
+export const getPendingSuggestions = async (sopId?: string) => {
+    let query = supabase?.from('sop_edit_suggestions').select('*, profiles:suggested_by(full_name), sops(title)').eq('status', 'pending');
+    if (sopId) query = query?.eq('sop_id', sopId);
+    
+    const { data, error } = await query?.order('created_at', { ascending: false }) || { data: null, error: new Error('Supabase not initialized') };
+    
+    if (error) throw error;
+    return data || [];
+};
+
+// Creator approving or rejecting a suggestion
+export const resolveSuggestion = async (suggestionId: string, action: 'approved' | 'rejected') => {
+    const { data: { user } } = await supabase?.auth.getUser() || { data: { user: null } };
+    if (!user) throw new Error('Not authenticated');
+
+    const { data, error } = await supabase
+        ?.from('sop_edit_suggestions')
+        .update({ 
+            status: action,
+            resolved_by: user.id,
+            resolved_at: new Date().toISOString()
+        })
+        .eq('id', suggestionId)
         .select()
         .single()
         || { data: null, error: new Error('Supabase not initialized') };

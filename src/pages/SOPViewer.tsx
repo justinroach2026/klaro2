@@ -1,9 +1,12 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { useStore } from '../store';
-import { supabase } from '../lib/supabase';
+import { supabase, suggestSOPEdit, getPendingEditSuggestions, resolveEditSuggestion } from '../lib/supabase';
 import SOPHistoryPanel from '../components/SOPHistoryPanel';
 import MarkdownEditor from '../components/MarkdownEditor';
+import OwnershipPanel from '../components/OwnershipPanel';
+import SOPLinkPicker from '../components/SOPLinkPicker';
+import PDFRenderer from '../components/PDFRenderer';
 import {
     Download,
     ChevronLeft,
@@ -14,7 +17,12 @@ import {
     Eye,
     Save,
     CheckCircle2,
-    Loader2
+    Loader2,
+    ShieldAlert,
+    GitPullRequestDraft,
+    Check,
+    X as XIcon,
+    Link as LinkIcon
 } from 'lucide-react';
 
 interface SOPViewerProps {
@@ -30,22 +38,49 @@ interface SOPViewerProps {
         profiles?: {
             full_name: string;
         };
+        owner_id?: string | null;
+        review_interval_days?: number | null;
+        last_reviewed_at?: string | null;
+        next_review_at?: string | null;
+        related_sop_ids?: string[] | null;
     };
     onBack: () => void;
 }
 
-export default function SOPViewer({ sop, onBack }: SOPViewerProps) {
+export default function SOPViewer({ sop: initialSop, onBack }: SOPViewerProps) {
     const { team, profile, user } = useStore();
+    const [sop, setSop] = useState(initialSop);
     const [isHistoryOpen, setIsHistoryOpen] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
     const [editedContent, setEditedContent] = useState(sop.content);
     const [editedTitle, setEditedTitle] = useState(sop.title);
+    
+    // Status Trackers
     const [isSaving, setIsSaving] = useState(false);
     const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
     const [hasChanges, setHasChanges] = useState(false);
-    const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    
+    // Phase 2 State
+    const [showLinkPicker, setShowLinkPicker] = useState(false);
+    const [suggestions, setSuggestions] = useState<any[]>([]);
+    const [viewingSuggestionId, setViewingSuggestionId] = useState<string | null>(null);
 
+    const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const isTemplate = sop.id.startsWith('template-');
+    const isViewer = profile?.role === 'viewer';
+    const isOwner = sop.owner_id === user?.id;
+
+    // Load pending suggestions if user is creator
+    useEffect(() => {
+        if (!isViewer && !isTemplate) {
+            loadSuggestions();
+        }
+    }, [sop.id, isViewer, isTemplate]);
+
+    const loadSuggestions = async () => {
+        const data = await getPendingEditSuggestions(sop.id);
+        setSuggestions(data || []);
+    };
 
     // Track changes
     useEffect(() => {
@@ -54,9 +89,9 @@ export default function SOPViewer({ sop, onBack }: SOPViewerProps) {
         setHasChanges(contentChanged || titleChanged);
     }, [editedContent, editedTitle, sop.content, sop.title]);
 
-    // Autosave after 5 seconds of inactivity (only for non-template SOPs)
+    // Autosave after 5 seconds of inactivity (only for creators and non-templates)
     useEffect(() => {
-        if (!hasChanges || isTemplate) return;
+        if (!hasChanges || isTemplate || isViewer) return;
 
         if (autosaveTimerRef.current) {
             clearTimeout(autosaveTimerRef.current);
@@ -71,14 +106,10 @@ export default function SOPViewer({ sop, onBack }: SOPViewerProps) {
                 clearTimeout(autosaveTimerRef.current);
             }
         };
-    }, [editedContent, editedTitle, hasChanges, isTemplate]);
+    }, [editedContent, editedTitle, hasChanges, isTemplate, isViewer]);
 
     const handlePrint = () => {
         window.print();
-    };
-
-    const handleOpenHistory = () => {
-        setIsHistoryOpen(true);
     };
 
     const handleSave = useCallback(async () => {
@@ -89,42 +120,55 @@ export default function SOPViewer({ sop, onBack }: SOPViewerProps) {
         setSaveStatus('saving');
 
         try {
-            const nextVersion = (sop.version || 1) + 1;
+            if (isViewer) {
+                // Viewers Suggest Edits instead of saving directly
+                await suggestSOPEdit(sop.id, editedContent, 'Suggested update via Viewer edit');
+                setSaveStatus('saved');
+                alert('Your edit suggestion has been submitted for review.');
+            } else {
+                // Creators save directly to main SOP
+                const nextVersion = (sop.version || 1) + 1;
 
-            // 1. Snapshot current version to history
-            await supabase!
-                .from('sop_history')
-                .insert({
-                    sop_id: sop.id,
-                    version: sop.version || 1,
-                    title: sop.title,
-                    content: sop.content,
-                    tags: sop.tags || [],
-                    change_summary: 'Manual edit',
-                    created_by: user.id
-                });
+                // 1. Snapshot current version to history
+                await supabase!
+                    .from('sop_history')
+                    .insert({
+                        sop_id: sop.id,
+                        version: sop.version || 1,
+                        title: sop.title,
+                        content: sop.content,
+                        tags: sop.tags || [],
+                        change_summary: 'Manual edit',
+                        created_by: user.id
+                    });
 
-            // 2. Update the SOP with new content
-            const { error } = await supabase!
-                .from('sops')
-                .update({
-                    title: editedTitle,
+                // 2. Update the SOP with new content
+                const { error } = await supabase!
+                    .from('sops')
+                    .update({
+                        title: editedTitle,
+                        content: editedContent,
+                        version: nextVersion,
+                        change_summary: 'Manual edit via rich text editor',
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', sop.id);
+
+                if (error) throw error;
+
+                setSop(prev => ({
+                    ...prev,
                     content: editedContent,
+                    title: editedTitle,
                     version: nextVersion,
-                    change_summary: 'Manual edit via rich text editor'
-                })
-                .eq('id', sop.id);
+                    updated_at: new Date().toISOString()
+                }));
+            }
 
-            if (error) throw error;
-
-            // Update the sop object in place so subsequent saves don't re-snapshot
-            sop.content = editedContent;
-            sop.title = editedTitle;
-            sop.version = nextVersion;
-            sop.updated_at = new Date().toISOString();
-
-            setSaveStatus('saved');
             setHasChanges(false);
+            if (!isViewer) setIsEditing(false); // auto close edit mode for creators after explicit save
+            
+            setSaveStatus('saved');
             setTimeout(() => setSaveStatus('idle'), 3000);
         } catch (error) {
             console.error('Save error:', error);
@@ -133,272 +177,363 @@ export default function SOPViewer({ sop, onBack }: SOPViewerProps) {
         } finally {
             setIsSaving(false);
         }
-    }, [user, isTemplate, hasChanges, saveStatus, sop, editedContent, editedTitle]);
+    }, [user, isTemplate, hasChanges, saveStatus, sop, editedContent, editedTitle, isViewer]);
 
     const handleToggleEdit = () => {
         if (isEditing && hasChanges) {
-            // If leaving edit mode with unsaved changes, prompt
-            const confirmLeave = confirm('You have unsaved changes. Save before leaving edit mode?');
-            if (confirmLeave) {
-                handleSave();
+            const confirmMsg = isViewer 
+                ? 'You have unsubmitted suggestions. Discard them?' 
+                : 'You have unsaved changes. Save before leaving edit mode?';
+            
+            if (confirm(confirmMsg)) {
+                if (!isViewer) handleSave();
+            } else {
+                return; // User cancelled
             }
         }
+        
+        // Reset content to original if closing without saving
+        if (isEditing && isViewer) {
+             setEditedContent(sop.content);
+             setEditedTitle(sop.title);
+        }
+        
         setIsEditing(!isEditing);
+    };
+
+    const handleResolveSuggestion = async (suggestionId: string, status: 'approved' | 'rejected') => {
+        setIsSaving(true);
+        try {
+            await resolveEditSuggestion(suggestionId, status);
+            await loadSuggestions();
+            if (status === 'approved') {
+                // If approved, trigger a full reload to get the new content/version from DB
+                // In a real app we'd fetch the new SOP data, but this works for now
+                window.location.reload(); 
+            }
+        } catch (error) {
+            console.error('Error resolving suggestion:', error);
+            alert('Failed to resolve suggestion.');
+        } finally {
+            setIsSaving(false);
+            setViewingSuggestionId(null);
+        }
     };
 
     const companyName = profile?.company_name || team?.name || '';
     const companyLogo = profile?.company_logo_url || team?.logo_url || '';
 
+    // If currently viewing a suggestion instead of live content
+    const activeSuggestion = suggestions.find(s => s.id === viewingSuggestionId);
+    const displayContent = activeSuggestion ? activeSuggestion.suggested_content : (isEditing ? editedContent : sop.content);
+    const displayTitle = isEditing ? editedTitle : sop.title;
+
     return (
-        <div className="min-h-screen bg-white">
+        <div className="min-h-screen bg-[#09090b]">
             {/* Toolbar */}
-            <div className="sticky top-0 z-10 bg-white/80 backdrop-blur-md border-b border-gray-100 print:hidden">
-                <div className="max-w-4xl mx-auto px-4 h-16 flex items-center justify-between">
+            <div className="sticky top-0 z-40 bg-[#09090b]/80 backdrop-blur-md border-b border-white/5 print:hidden">
+                <div className="max-w-5xl mx-auto px-6 h-16 flex items-center justify-between">
                     <button
                         onClick={onBack}
-                        className="flex items-center text-text-light hover:text-text font-medium"
+                        className="flex items-center text-white/50 hover:text-white font-medium transition-colors"
                     >
                         <ChevronLeft className="w-5 h-5 mr-1" />
-                        Back
+                        Back to Dashboard
                     </button>
 
-                    <div className="flex items-center gap-2">
-                        {/* Save status indicator */}
+                    <div className="flex items-center gap-3">
+                        {/* Status Messages */}
                         {saveStatus === 'saving' && (
-                            <span className="flex items-center gap-1.5 text-xs text-text-lighter animate-pulse">
-                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                Saving…
+                            <span className="flex items-center gap-1.5 text-xs text-white/50 animate-pulse">
+                                <Loader2 className="w-3.5 h-3.5 animate-spin text-[#137fec]" />
+                                {isViewer ? 'Submitting...' : 'Saving...'}
                             </span>
                         )}
                         {saveStatus === 'saved' && (
-                            <span className="flex items-center gap-1.5 text-xs text-green-600 font-medium">
+                            <span className="flex items-center gap-1.5 text-xs text-[#137fec] font-bold">
                                 <CheckCircle2 className="w-3.5 h-3.5" />
-                                Saved
-                            </span>
-                        )}
-                        {saveStatus === 'error' && (
-                            <span className="flex items-center gap-1.5 text-xs text-red-500 font-medium">
-                                Save failed
+                                {isViewer ? 'Submitted' : 'Saved'}
                             </span>
                         )}
                         {hasChanges && saveStatus === 'idle' && (
-                            <span className="flex items-center gap-1.5 text-xs text-amber-500 font-medium">
+                            <span className="flex items-center gap-1.5 text-xs text-amber-500 font-bold">
                                 <span className="w-2 h-2 bg-amber-400 rounded-full animate-pulse" />
                                 Unsaved changes
                             </span>
                         )}
 
-                        {/* Edit toggle */}
-                        <button
-                            onClick={handleToggleEdit}
-                            className={`p-2 rounded-lg flex items-center gap-2 px-3 transition-colors text-sm font-medium ${isEditing
-                                    ? 'bg-primary text-white'
-                                    : 'text-text-light hover:bg-gray-100'
-                                }`}
-                        >
-                            {isEditing ? <Eye className="w-4 h-4" /> : <Edit3 className="w-4 h-4" />}
-                            <span>{isEditing ? 'View' : 'Edit'}</span>
-                        </button>
+                        {/* Edit Mode Toggle */}
+                        {(!activeSuggestion) && (
+                            <button
+                                onClick={handleToggleEdit}
+                                className={`p-2 rounded-xl flex items-center gap-2 px-4 transition-all text-sm font-bold ${isEditing
+                                        ? 'bg-white text-black hover:bg-white/90 shadow-lg'
+                                        : 'bg-white/5 text-white/70 hover:bg-white/10 hover:text-white'
+                                    }`}
+                            >
+                                {isEditing ? <Eye className="w-4 h-4" /> : <Edit3 className="w-4 h-4" />}
+                                <span>{isEditing ? 'View Mode' : (isViewer ? 'Suggest Edit' : 'Edit Mode')}</span>
+                            </button>
+                        )}
 
-                        {/* Save button (only in edit mode with changes) */}
+                        {/* Save/Suggest Button (only in edit mode with changes) */}
                         {isEditing && hasChanges && !isTemplate && (
                             <button
                                 onClick={handleSave}
                                 disabled={isSaving}
-                                className="btn-primary py-2 px-4 text-sm flex items-center gap-2"
+                                className="bg-[#137fec] hover:bg-[#137fec]/90 text-white shadow-[#137fec]/20 shadow-lg py-2 px-4 rounded-xl text-sm font-bold flex items-center gap-2 transition-all disabled:opacity-50"
                             >
                                 <Save className="w-4 h-4" />
-                                {isSaving ? 'Saving…' : 'Save'}
+                                {isSaving ? 'Processing...' : (isViewer ? 'Submit Suggestion' : 'Save Changes')}
                             </button>
                         )}
 
-                        {!isEditing && (
+                        {/* Read-Only Actions */}
+                        {!isEditing && !activeSuggestion && (
                             <>
                                 <button
-                                    onClick={handleOpenHistory}
-                                    className="p-2 text-text-light hover:bg-gray-100 rounded-lg flex items-center gap-2 px-3 transition-colors"
+                                    onClick={() => setIsHistoryOpen(true)}
+                                    className="p-2 text-white/50 hover:bg-white/5 hover:text-white rounded-xl flex items-center gap-2 px-3 transition-colors"
                                 >
                                     <History className="w-4 h-4" />
-                                    <span className="text-sm">History</span>
+                                    <span className="text-sm font-bold">History</span>
                                 </button>
-                                <button
-                                    onClick={handlePrint}
-                                    className="p-2 text-text-light hover:bg-gray-100 rounded-lg flex items-center gap-2 px-3 transition-colors"
-                                >
-                                    <Printer className="w-4 h-4" />
-                                    <span className="text-sm">Print</span>
-                                </button>
-                                <button className="btn-primary py-2 px-4 text-sm flex items-center gap-2">
-                                    <Download className="w-4 h-4" />
-                                    Export PDF
-                                </button>
+                                
+                                {profile?.role === 'creator' && (
+                                    <button
+                                        onClick={handlePrint}
+                                        className="p-2 text-white/50 hover:bg-[#137fec]/10 hover:text-[#137fec] rounded-xl flex items-center gap-2 px-3 transition-colors group"
+                                    >
+                                        <Download className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                                        <span className="text-sm font-bold">Export PDF</span>
+                                    </button>
+                                )}
                             </>
                         )}
                     </div>
                 </div>
             </div>
 
-            {/* SOP Content */}
-            <article className="max-w-4xl mx-auto px-6 py-12 print:py-0">
-                {/* Company Branding Header */}
-                <div className="flex items-start justify-between mb-12 border-b-2 border-primary/10 pb-8">
-                    <div>
-                        {companyLogo ? (
-                            <img src={companyLogo} alt={companyName} className="h-14 max-w-[220px] object-contain mb-3" />
-                        ) : companyName ? (
-                            <div className="text-2xl font-heading font-black text-primary mb-2 tracking-tight">
-                                {companyName}
+            {/* Suggestions Banner (Creators Only) */}
+            {suggestions.length > 0 && !isEditing && (
+                <div className="bg-[#137fec]/10 border-b border-[#137fec]/20 print:hidden">
+                    <div className="max-w-5xl mx-auto px-6 py-3 flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-[#137fec]/20 flex items-center justify-center text-[#137fec]">
+                                <GitPullRequestDraft className="w-4 h-4" />
                             </div>
-                        ) : (
-                            <div className="text-2xl font-heading font-black text-primary mb-2 italic tracking-tighter">
-                                KLARO<span className="text-text">DOCUMENTATION</span>
+                            <div>
+                                <h4 className="text-sm font-bold text-white">Pending Suggestions ({suggestions.length})</h4>
+                                <p className="text-xs text-[#137fec]">Viewers have submitted edits for review</p>
                             </div>
-                        )}
-                        <p className="text-text-lighter text-sm uppercase tracking-widest font-bold">
-                            Standard Operating Procedure
-                        </p>
-                        {profile?.company_website && (
-                            <p className="text-xs text-primary/70 mt-1">{profile.company_website}</p>
-                        )}
-                    </div>
-                    <div className="text-right text-xs text-text-lighter space-y-1">
-                        <div className="flex items-center justify-end gap-2">
-                            <span className="font-bold">Doc ID:</span> #{sop.id.substring(0, 8).toUpperCase()}
                         </div>
-                        {sop.version && (
-                            <div className="flex items-center justify-end gap-2">
-                                <span className="font-bold">Version:</span>
-                                <span className="bg-primary/10 text-primary px-2 py-0.5 rounded text-[10px] font-black">V{sop.version}</span>
-                            </div>
-                        )}
-                        <div className="flex items-center justify-end gap-2">
-                            <span className="font-bold">Language:</span> {sop.language.toUpperCase()}
-                        </div>
-                        <div className="flex items-center justify-end gap-2">
-                            <span className="font-bold">Status:</span>
-                            <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-bold">ACTIVE</span>
-                        </div>
-                        <div className="flex items-center justify-end gap-2 mt-2">
-                            <Calendar className="w-3 h-3" />
-                            <span className="font-bold">Created:</span> {new Date(sop.created_at).toLocaleDateString()}
-                        </div>
-                        <div className="flex items-center justify-end gap-2">
-                            <span className="font-bold">Last Updated:</span> {new Date(sop.updated_at).toLocaleDateString()}
+                        <div className="flex gap-2">
+                            {viewingSuggestionId ? (
+                                <>
+                                    <button 
+                                        onClick={() => handleResolveSuggestion(viewingSuggestionId, 'rejected')}
+                                        disabled={isSaving}
+                                        className="px-3 py-1.5 bg-red-500/10 text-red-500 hover:bg-red-500/20 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5"
+                                    >
+                                        <XIcon className="w-3.5 h-3.5" /> Reject
+                                    </button>
+                                    <button 
+                                        onClick={() => handleResolveSuggestion(viewingSuggestionId, 'approved')}
+                                        disabled={isSaving}
+                                        className="px-3 py-1.5 bg-green-500/10 text-green-500 hover:bg-green-500/20 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5"
+                                    >
+                                        <Check className="w-3.5 h-3.5" /> Approve & Merge
+                                    </button>
+                                    <button 
+                                        onClick={() => setViewingSuggestionId(null)}
+                                        className="px-3 py-1.5 bg-white/5 text-white/70 hover:bg-white/10 rounded-lg text-xs font-bold transition-all ml-4"
+                                    >
+                                        Cancel Review
+                                    </button>
+                                </>
+                            ) : (
+                                <button 
+                                    onClick={() => setViewingSuggestionId(suggestions[0].id)}
+                                    className="px-4 py-2 bg-[#137fec] text-white rounded-lg text-xs font-bold hover:bg-[#137fec]/90 transition-all shadow-lg"
+                                >
+                                    Review Next
+                                </button>
+                            )}
                         </div>
                     </div>
                 </div>
+            )}
 
-                {/* Editable Title */}
-                {isEditing ? (
-                    <div className="mb-6">
-                        <label className="block text-xs font-bold text-text-lighter uppercase tracking-wider mb-2">Document Title</label>
-                        <input
-                            type="text"
-                            value={editedTitle}
-                            onChange={(e) => setEditedTitle(e.target.value)}
-                            className="w-full text-3xl font-heading font-bold text-text border border-gray-200 rounded-xl p-4 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
-                        />
-                    </div>
-                ) : null}
+            {/* Main Layout */}
+            <div className="max-w-7xl mx-auto flex gap-8 p-6 print:p-0 print:block">
+                
+                {/* Left Column: Document */}
+                <article className="flex-1 bg-[#121214] border border-white/5 rounded-3xl p-10 print:hidden relative overflow-hidden">
+                    {/* Glowing effect top center */}
+                    <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[500px] h-[300px] bg-[#137fec]/10 blur-[100px] rounded-full pointer-events-none" />
 
-                {/* Metadata Tags */}
-                {sop.tags && sop.tags.length > 0 && (
-                    <div className="mb-8 flex flex-wrap gap-2">
-                        {sop.tags.map(tag => (
-                            <span key={tag} className="px-3 py-1 bg-primary/5 text-primary text-xs font-bold rounded-full border border-primary/10">
-                                #{tag}
-                            </span>
-                        ))}
+                    {/* Meta Header */}
+                    <div className="flex items-start justify-between mb-12 border-b border-white/10 pb-8 relative z-10">
+                        <div>
+                            {companyLogo ? (
+                                <img src={companyLogo} alt={companyName} className="h-10 max-w-[200px] object-contain mb-4" />
+                            ) : companyName ? (
+                                <div className="text-xl font-black text-white mb-2 tracking-tight">
+                                    {companyName}
+                                </div>
+                            ) : null}
+                            <p className="text-[#137fec] text-xs uppercase tracking-widest font-black bg-[#137fec]/10 inline-block px-3 py-1 rounded-full border border-[#137fec]/20">
+                                {activeSuggestion ? 'SUGGESTED EDIT PREVIEW' : 'Standard Operating Procedure'}
+                            </p>
+                        </div>
+                        <div className="text-right text-xs text-white/40 space-y-1.5 font-mono">
+                            <div>ID: <span className="text-white/80">{sop.id.substring(0, 8)}</span></div>
+                            {sop.version && <div>VER: <span className="text-[#137fec] bg-[#137fec]/10 px-1.5 rounded">v{sop.version}</span></div>}
+                            <div>UPDATED: <span className="text-white/80">{new Date(sop.updated_at).toLocaleDateString()}</span></div>
+                        </div>
                     </div>
-                )}
 
-                {/* Content: Editor or Markdown Render */}
-                {isEditing ? (
-                    <div className="print:hidden">
-                        <MarkdownEditor
-                            value={editedContent}
-                            onChange={setEditedContent}
-                        />
-                        {isTemplate && (
-                            <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
-                                <strong>📝 Template Preview:</strong> This is a template document. To save edits, first create this SOP through the interview process — the content will then be editable and saved to your account.
-                            </div>
-                        )}
-                    </div>
-                ) : (
-                    <div className="prose prose-blue max-w-none 
-                        prose-headings:font-heading prose-headings:font-bold prose-headings:text-text
-                        prose-h1:text-4xl prose-h1:mb-8 prose-h1:mt-4 prose-h1:text-primary
-                        prose-h2:text-2xl prose-h2:mt-14 prose-h2:mb-6 prose-h2:flex prose-h2:items-center prose-h2:gap-3
-                        prose-h2:before:content-[''] prose-h2:before:w-1 prose-h2:before:h-8 prose-h2:before:bg-primary prose-h2:before:rounded-full
-                        prose-h3:text-lg prose-h3:mt-10 prose-h3:mb-4 prose-h3:text-text
-                        prose-p:text-text-light prose-p:leading-relaxed prose-p:text-base prose-p:mb-4
-                        prose-li:text-text-light prose-li:text-base prose-li:leading-relaxed prose-li:mb-1
-                        prose-ul:my-4 prose-ul:pl-2
-                        prose-ol:my-4 prose-ol:pl-2
-                        prose-strong:text-text prose-strong:font-bold
-                        prose-hr:my-12 prose-hr:border-gray-100
-                        prose-table:border-collapse prose-table:w-full prose-table:my-6
-                        prose-th:bg-primary/5 prose-th:text-text prose-th:font-bold prose-th:text-sm prose-th:p-3 prose-th:text-left prose-th:border prose-th:border-gray-200
-                        prose-td:p-3 prose-td:text-sm prose-td:border prose-td:border-gray-200 prose-td:text-text-light
-                        [&_ul_ul]:mt-1 [&_ul_ul]:mb-0
-                        [&_li>p]:mb-1
-                        [&_input[type=checkbox]]:mr-2
-                    ">
-                        <ReactMarkdown>{editedContent}</ReactMarkdown>
-                    </div>
-                )}
+                    {/* Title editor / display */}
+                    {isEditing ? (
+                        <div className="mb-8 relative z-10">
+                            <input
+                                type="text"
+                                value={editedTitle}
+                                onChange={(e) => setEditedTitle(e.target.value)}
+                                placeholder="SOP Title..."
+                                className="w-full text-4xl font-black tracking-tight text-white bg-transparent border-0 border-b border-white/10 focus:border-[#137fec] focus:ring-0 px-0 pb-4 outline-none transition-all placeholder:text-white/20"
+                            />
+                        </div>
+                    ) : (
+                        <h1 className="text-4xl font-black tracking-tight text-white mb-8 relative z-10 break-words leading-tight">
+                            {displayTitle}
+                        </h1>
+                    )}
 
-                {/* Approval Signature */}
-                {!isEditing && (
-                    <div className="mt-24 p-8 border-2 border-dashed border-gray-100 rounded-3xl grid grid-cols-2 gap-8 print:border-solid">
-                        <div className="space-y-4">
-                            <p className="text-xs font-bold text-text-lighter uppercase tracking-widest">Prepared By</p>
-                            <div className="h-12 border-b border-gray-200 flex items-end pb-2">
-                                <span className="font-handwriting text-2xl text-primary/80">
-                                    {sop.profiles?.full_name || 'AI Documentation Specialist'}
+                    {/* Tags */}
+                    {sop.tags && sop.tags.length > 0 && !isEditing && (
+                        <div className="mb-10 flex flex-wrap gap-2 relative z-10">
+                            {sop.tags.map(tag => (
+                                <span key={tag} className="px-3 py-1 bg-white/5 text-white/60 text-xs font-bold rounded-lg border border-white/10">
+                                    #{tag}
                                 </span>
-                            </div>
-                            <p className="text-sm text-text-light">{sop.profiles?.full_name || 'AI Assistant'}</p>
+                            ))}
                         </div>
-                        <div className="space-y-4">
-                            <p className="text-xs font-bold text-text-lighter uppercase tracking-widest">Approved By</p>
-                            <div className="h-12 border-b border-gray-200"></div>
-                            <p className="text-sm text-text-light">Process Owner</p>
-                        </div>
-                    </div>
-                )}
+                    )}
 
-                {/* Footer with Company Info */}
-                {!isEditing && (
-                    <div className="mt-20 pt-8 border-t border-gray-100 text-center text-xs text-text-lighter space-y-2">
-                        <p className="italic">
-                            This document was professionally generated by Klaro 2 AI.
-                            {companyName && ` Property of ${companyName}.`}
-                        </p>
-                        {(profile?.company_email || profile?.company_phone || profile?.company_address) && (
-                            <div className="flex flex-wrap items-center justify-center gap-3 text-text-lighter/70">
-                                {profile.company_email && <span>✉ {profile.company_email}</span>}
-                                {profile.company_phone && <span>📞 {profile.company_phone}</span>}
-                                {profile.company_address && <span>📍 {profile.company_address}</span>}
+                    {/* Content Area */}
+                    <div className="relative z-10">
+                        {isEditing ? (
+                            <div className="rounded-2xl border border-white/10 overflow-hidden bg-black/20">
+                                <MarkdownEditor
+                                    value={editedContent}
+                                    onChange={setEditedContent}
+                                />
+                                {isViewer && (
+                                    <div className="p-4 bg-[#137fec]/10 border-t border-[#137fec]/20 flex items-start gap-3">
+                                        <ShieldAlert className="w-5 h-5 text-[#137fec] shrink-0" />
+                                        <div>
+                                            <p className="text-sm font-bold text-white mb-1">Viewer Mode: Suggesting Edits</p>
+                                            <p className="text-xs text-white/50">Your changes will be saved as a suggestion for the process owner to review. They will not go live immediately.</p>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        ) : (
+                            <div className="prose prose-invert prose-blue max-w-none 
+                                prose-headings:font-black prose-headings:tracking-tight prose-headings:text-white
+                                prose-h1:text-3xl prose-h1:mb-6 prose-h1:mt-8
+                                prose-h2:text-2xl prose-h2:mt-12 prose-h2:mb-4 prose-h2:text-[#137fec]
+                                prose-h3:text-xl prose-h3:mt-8 prose-h3:mb-3
+                                prose-p:text-white/70 prose-p:leading-relaxed prose-p:mb-5
+                                prose-li:text-white/70 prose-li:leading-relaxed
+                                prose-strong:text-white prose-strong:font-bold
+                                prose-hr:border-white/10 prose-hr:my-10
+                                prose-code:text-[#137fec] prose-code:bg-[#137fec]/10 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-md prose-code:before:content-none prose-code:after:content-none
+                                prose-pre:bg-white/5 prose-pre:border prose-pre:border-white/10 prose-pre:rounded-xl
+                                prose-blockquote:border-l-[#137fec] prose-blockquote:bg-[#137fec]/5 prose-blockquote:py-2 prose-blockquote:px-4 prose-blockquote:rounded-r-xl prose-blockquote:not-italic prose-blockquote:text-white/80
+                            ">
+                                <ReactMarkdown>{displayContent}</ReactMarkdown>
                             </div>
                         )}
-                        <p>Confidential business documentation. Internal use only.</p>
                     </div>
-                )}
-            </article>
+                </article>
 
-            {/* History Panel */}
+                {/* Right Column: Process Integrity Sidebar */}
+                {!isEditing && !activeSuggestion && (
+                    <aside className="w-80 shrink-0 space-y-6 print:hidden">
+                        <OwnershipPanel
+                            sopId={sop.id}
+                            initialOwnerId={sop.owner_id}
+                            initialIntervalDays={sop.review_interval_days}
+                            lastReviewedAt={sop.last_reviewed_at}
+                            nextReviewAt={sop.next_review_at}
+                            currentRole={profile?.role as 'creator' | 'viewer'}
+                            onUpdate={(ownerId, intervalDays) => {
+                                setSop(prev => ({
+                                    ...prev,
+                                    owner_id: ownerId,
+                                    review_interval_days: intervalDays
+                                }));
+                            }}
+                        />
+
+                        {/* Dependencies Panel */}
+                        <div className="bg-[#121214] border border-white/5 rounded-2xl p-5 shadow-xl relative overflow-hidden">
+                            <div className="absolute top-0 right-0 w-32 h-32 bg-[#137fec]/5 blur-[40px] rounded-full" />
+                            
+                            <div className="relative z-10 flex items-center justify-between mb-4">
+                                <div>
+                                    <h3 className="text-white font-bold text-sm tracking-tight flex items-center gap-2">
+                                        <LinkIcon className="w-4 h-4 text-[#137fec]" />
+                                        Process Dependencies
+                                    </h3>
+                                    <p className="text-xs text-white/40 mt-1">SOPs linked to this document</p>
+                                </div>
+                            </div>
+                            
+                            {sop.related_sop_ids && sop.related_sop_ids.length > 0 ? (
+                                <div className="space-y-2 mb-4">
+                                    <p className="text-[10px] font-bold text-white/30 uppercase tracking-widest">{sop.related_sop_ids.length} Linked Items</p>
+                                    {/* Ideally we'd map and load the titles, but for now we just show count/managed view */}
+                                </div>
+                            ) : (
+                                <div className="py-4 text-center text-xs text-white/30 italic bg-white/5 rounded-xl border border-white/5 mb-4">
+                                    No dependencies linked yet.
+                                </div>
+                            )}
+
+                            {profile?.role === 'creator' && (
+                                <button 
+                                    onClick={() => setShowLinkPicker(true)}
+                                    className="w-full py-2 bg-white/5 hover:bg-white/10 text-white/70 hover:text-white rounded-xl text-xs font-bold transition-all border border-white/5 flex items-center justify-center gap-2"
+                                >
+                                    <LinkIcon className="w-3.5 h-3.5" />
+                                    Manage Links
+                                </button>
+                            )}
+                        </div>
+                    </aside>
+                )}
+            </div>
+
+            {/* Overlays & Print Rendering */}
             <SOPHistoryPanel
                 sopId={sop.id}
                 isOpen={isHistoryOpen}
                 onClose={() => setIsHistoryOpen(false)}
-                onRollback={async (record) => {
-                    if (confirm(`Rollback to Version ${record.version}? This will create a new current version.`)) {
+                currentRole={profile?.role as 'creator' | 'viewer'}
+                onViewVersion={(record) => {
+                    setEditedContent(record.content);
+                    setEditedTitle(record.title);
+                    setIsEditing(false);
+                    alert(`Viewing historical version: ${record.version}`);
+                }}
+                onRestoreVersion={async (record) => {
+                    if (confirm(`Restore Version ${record.version}? This will become the new active version.`)) {
                         try {
                             const nextVersion = (sop.version || 1) + 1;
-
-                            // 1. Snapshot current version to history
+                            
                             await supabase!
                                 .from('sop_history')
                                 .insert({
@@ -411,7 +546,6 @@ export default function SOPViewer({ sop, onBack }: SOPViewerProps) {
                                     created_by: user?.id
                                 });
 
-                            // 2. Update current version
                             const { error } = await supabase!
                                 .from('sops')
                                 .update({
@@ -423,15 +557,49 @@ export default function SOPViewer({ sop, onBack }: SOPViewerProps) {
                                 .eq('id', sop.id);
 
                             if (error) throw error;
-
-                            alert('Rollback successful!');
                             window.location.reload();
                         } catch (error) {
                             console.error('Rollback error:', error);
-                            alert('Failed to rollback.');
                         }
                     }
                 }}
+            />
+
+            {showLinkPicker && (
+                <div className="fixed inset-0 z-50 flex justify-end">
+                    <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowLinkPicker(false)} />
+                    <div className="relative w-full max-w-md h-full bg-[#121214] border-l border-white/10 animate-slide-in-right">
+                        <div className="h-full flex flex-col p-6">
+                            <div className="flex items-center justify-between mb-6 pb-6 border-b border-white/5">
+                                <div>
+                                    <h2 className="text-lg font-black text-white">Manage Links</h2>
+                                    <p className="text-xs text-white/40">Connect related documentation</p>
+                                </div>
+                                <button onClick={() => setShowLinkPicker(false)} className="p-2 text-white/30 hover:bg-white/5 hover:text-white rounded-xl transition-all">
+                                    <XIcon className="w-5 h-5" />
+                                </button>
+                            </div>
+                            <SOPLinkPicker
+                                currentSopId={sop.id}
+                                selectedSopIds={sop.related_sop_ids || []}
+                                onChange={async (newIds) => {
+                                    setSop(prev => ({ ...prev, related_sop_ids: newIds }));
+                                }}
+                            />
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Hidden PDF Wrapper for Print Mode */}
+            <PDFRenderer
+                title={sop.title}
+                content={displayContent}
+                companyName={companyName}
+                companyLogoUrl={companyLogo}
+                version={sop.version}
+                updatedAt={sop.updated_at}
+                tags={sop.tags}
             />
         </div>
     );
