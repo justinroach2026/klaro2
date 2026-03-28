@@ -76,7 +76,9 @@ export default function OfficeMode() {
                 "Ich habe alle Informationen, die ich brauche",
                 "Ho tutte le informazioni di cui ho bisogno",
                 "Tenho todas as informazioni que preciso",
-                "Mam wszystkie potrzebne informacje"
+                "Mam wszystkie potrzebne informacje",
+                "Please click the 'Generate SOP Now' button",
+                "Please click the \"Generate SOP Now\" button"
             ];
 
             const isReady = readinessPhrases.some(phrase =>

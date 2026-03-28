@@ -247,7 +247,10 @@ export default function Dashboard({ onNewSOP, onViewSOP, onSettings }: {
                             </div>
                         ))
                     ) : (
-                        <div className="text-center py-20 bg-white rounded-3xl border-2 border-dashed border-gray-100">
+                        <button
+                            onClick={onNewSOP}
+                            className="w-full block text-center py-20 bg-white hover:bg-gray-50 transition-colors rounded-3xl border-2 border-dashed border-gray-200 cursor-pointer"
+                        >
                             <div className="w-20 h-20 bg-primary/5 rounded-full flex items-center justify-center mx-auto mb-6 text-primary/30">
                                 <Plus className="w-10 h-10" />
                             </div>
@@ -255,7 +258,7 @@ export default function Dashboard({ onNewSOP, onViewSOP, onSettings }: {
                             <p className="text-text-light text-sm px-10 max-w-sm mx-auto">
                                 Documentation doesn't have to be a chore. Let our AI guide you through a voice interview.
                             </p>
-                        </div>
+                        </button>
                     )}
                 </div>
             </main>
