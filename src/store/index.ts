@@ -133,9 +133,11 @@ interface AppState {
     // UI state
     theme: 'light' | 'dark' | 'system';
     isLoading: boolean;
+    isAuthLoading: boolean;
     error: string | null;
     setTheme: (theme: 'light' | 'dark' | 'system') => void;
     setIsLoading: (loading: boolean) => void;
+    setIsAuthLoading: (loading: boolean) => void;
     setError: (error: string | null) => void;
 }
 
@@ -177,11 +179,13 @@ export const useStore = create<AppState>((set) => ({
     // UI state
     theme: (localStorage.getItem('klaro-theme') as 'light' | 'dark' | 'system') || 'system',
     isLoading: false,
+    isAuthLoading: true,
     error: null,
     setTheme: (theme) => {
         localStorage.setItem('klaro-theme', theme);
         set({ theme });
     },
     setIsLoading: (loading) => set({ isLoading: loading }),
+    setIsAuthLoading: (loading) => set({ isAuthLoading: loading }),
     setError: (error) => set({ error }),
 }));

@@ -17,13 +17,7 @@ ALTER TABLE sops
 ADD COLUMN IF NOT EXISTS owner_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
 ADD COLUMN IF NOT EXISTS review_interval_days INTEGER DEFAULT NULL,
 ADD COLUMN IF NOT EXISTS last_reviewed_at TIMESTAMPTZ DEFAULT NULL,
-ADD COLUMN IF NOT EXISTS next_review_at TIMESTAMPTZ GENERATED ALWAYS AS (
-    CASE 
-        WHEN last_reviewed_at IS NOT NULL AND review_interval_days IS NOT NULL
-        THEN last_reviewed_at + (review_interval_days || ' days')::INTERVAL
-        ELSE NULL
-    END
-) STORED;
+ADD COLUMN IF NOT EXISTS next_review_at TIMESTAMPTZ DEFAULT NULL;
 
 COMMENT ON COLUMN sops.owner_id IS 
   'The user responsible for keeping this SOP up to date';

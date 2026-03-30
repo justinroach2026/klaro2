@@ -593,6 +593,20 @@ Spraw, aby było profesjonalne, możliwe do wykonania i sformatowane pod kątem 
     }
 
     /**
+     * Restore conversation history from a saved transcript so the AI
+     * has full context when resuming an in-progress session.
+     */
+    loadHistory(transcript: { role: string; content: string }[]): void {
+        for (const msg of transcript) {
+            if (msg.role === 'user') {
+                this.conversationHistory.push({ role: 'user', content: msg.content });
+            } else if (msg.role === 'ai') {
+                this.conversationHistory.push({ role: 'assistant', content: msg.content });
+            }
+        }
+    }
+
+    /**
      * Reset conversation
      */
     reset(): void {

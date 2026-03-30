@@ -74,6 +74,7 @@ export interface Database {
                     last_reviewed_at: string | null;
                     next_review_at: string | null;
                     related_sop_ids: string[];
+                    status: 'draft' | 'published';
                     created_at: string;
                     updated_at: string;
                 };
@@ -239,10 +240,22 @@ export const getRelatedSOPs = async (sopIds: string[]) => {
 };
 
 export const markSOPReviewed = async (sopId: string) => {
-    const now = new Date().toISOString();
+    const now = new Date();
+
+    // Fetch current review_interval_days to compute next_review_at
+    const { data: sop } = await supabase
+        ?.from('sops')
+        .select('review_interval_days')
+        .eq('id', sopId)
+        .single() || { data: null };
+
+    const next = sop?.review_interval_days
+        ? new Date(now.getTime() + sop.review_interval_days * 86400000).toISOString()
+        : null;
+
     const { data, error } = await supabase
         ?.from('sops')
-        .update({ last_reviewed_at: now })
+        .update({ last_reviewed_at: now.toISOString(), next_review_at: next })
         .eq('id', sopId)
         .select()
         .single()
@@ -328,10 +341,152 @@ export const getPendingSuggestions = async (sopId?: string) => {
     return data || [];
 };
 
+// ── Interview session helpers ────────────────────────────────────────────────
+
+// Create a new in-progress session and return its id
+export const createInterviewSession = async (
+    teamId: string,
+    userId: string,
+    mode: 'drive' | 'office',
+    language: string,
+): Promise<string> => {
+    const { data, error } = await supabase
+        ?.from('interview_sessions')
+        .insert({ team_id: teamId, user_id: userId, mode, language, transcript: [], status: 'in_progress' })
+        .select('id')
+        .single()
+        || { data: null, error: new Error('Supabase not initialized') };
+    if (error) throw error;
+    return data!.id;
+};
+
+// Overwrite the transcript for an existing session
+export const saveInterviewTranscript = async (
+    sessionId: string,
+    transcript: { role: string; content: string; timestamp: number }[],
+): Promise<void> => {
+    const { error } = await supabase
+        ?.from('interview_sessions')
+        .update({ transcript, status: 'in_progress' })
+        .eq('id', sessionId)
+        || { error: new Error('Supabase not initialized') };
+    if (error) throw error;
+};
+
+// Mark a session as completed (after SOP generated)
+export const completeInterviewSession = async (sessionId: string, sopId?: string): Promise<void> => {
+    const { error } = await supabase
+        ?.from('interview_sessions')
+        .update({ status: 'completed', completed_at: new Date().toISOString(), ...(sopId ? { sop_id: sopId } : {}) })
+        .eq('id', sessionId)
+        || { error: new Error('Supabase not initialized') };
+    if (error) throw error;
+};
+
+// Get all in-progress sessions for the dashboard resume list
+export const getInProgressSessions = async (userId: string): Promise<{
+    id: string;
+    mode: 'drive' | 'office';
+    language: string;
+    transcript: { role: string; content: string; timestamp: number }[];
+    created_at: string;
+}[]> => {
+    const { data, error } = await supabase
+        ?.from('interview_sessions')
+        .select('id, mode, language, transcript, created_at')
+        .eq('user_id', userId)
+        .eq('status', 'in_progress')
+        .order('created_at', { ascending: false })
+        || { data: null, error: new Error('Supabase not initialized') };
+    if (error) throw error;
+    return (data as any) || [];
+};
+
+// Load the most recent in-progress session for this user+mode combination
+export const loadInterviewSession = async (
+    userId: string,
+    mode: 'drive' | 'office',
+): Promise<{ id: string; transcript: { role: string; content: string; timestamp: number }[] } | null> => {
+    const { data, error } = await supabase
+        ?.from('interview_sessions')
+        .select('id, transcript')
+        .eq('user_id', userId)
+        .eq('mode', mode)
+        .eq('status', 'in_progress')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+        || { data: null, error: new Error('Supabase not initialized') };
+    if (error) throw error;
+    return data as any;
+};
+
+// ─── Draft SOP Helpers ──────────────────────────────────────────────────────
+
+// Create a new SOP in draft status from a template (called when user clicks a template card)
+export const createDraftSOP = async (params: {
+    teamId: string;
+    userId: string;
+    title: string;
+    content: string;
+    tags: string[];
+    language: string;
+}): Promise<string> => {
+    const { data, error } = await supabase
+        ?.from('sops')
+        .insert({
+            team_id: params.teamId,
+            created_by: params.userId,
+            title: params.title,
+            content: params.content,
+            tags: params.tags,
+            language: params.language,
+            version: 1,
+            status: 'draft',
+            related_sop_ids: [],
+        })
+        .select('id')
+        .single()
+        || { data: null, error: new Error('Supabase not initialized') };
+    if (error) throw error;
+    return data!.id;
+};
+
+// Fetch all draft SOPs for a team (for the "In Progress" dashboard section)
+export const getDraftSOPs = async (): Promise<{
+    id: string;
+    title: string;
+    tags: string[];
+    updated_at: string;
+    created_at: string;
+}[]> => {
+    const { data, error } = await supabase
+        ?.from('sops')
+        .select('id, title, tags, updated_at, created_at')
+        .eq('status', 'draft')
+        .order('updated_at', { ascending: false })
+        || { data: null, error: new Error('Supabase not initialized') };
+    if (error) throw error;
+    return (data as any) || [];
+};
+
+// Publish a draft SOP
+export const publishSOP = async (sopId: string): Promise<void> => {
+    const { error } = await supabase
+        ?.from('sops')
+        .update({ status: 'published' })
+        .eq('id', sopId)
+        || { error: new Error('Supabase not initialized') };
+    if (error) throw error;
+};
+
 // Creator approving or rejecting a suggestion
 export const resolveSuggestion = async (suggestionId: string, action: 'approved' | 'rejected') => {
     const { data: { user } } = await supabase?.auth.getUser() || { data: { user: null } };
     if (!user) throw new Error('Not authenticated');
+
+    const profile = await getProfile(user.id);
+    if (profile?.role !== 'creator') throw new Error('Only creators can resolve suggestions');
 
     const { data, error } = await supabase
         ?.from('sop_edit_suggestions')

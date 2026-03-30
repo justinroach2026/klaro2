@@ -1,13 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
-import { useStore, SUPPORTED_LANGUAGES, SUPPORTED_INDUSTRIES, SUPPORTED_COUNTRIES, type LanguageCode, type IndustryCode, type CountryCode } from '../store';
-import { updateProfile, supabase } from '../lib/supabase';
+import { useNavigate } from 'react-router-dom';
+import { useStore, SUPPORTED_LANGUAGES, SUPPORTED_INDUSTRIES, SUPPORTED_COUNTRIES, type LanguageCode, type IndustryCode, type CountryCode } from '../../store';
+import { updateProfile, supabase } from '../../lib/supabase';
 import { ArrowLeft, Save, Globe, Building2, MapPin, Bot, CheckCircle2, Briefcase, Upload, Link, Mail, Phone, MapPinned, ImagePlus, Trash2, Loader2 } from 'lucide-react';
 
-interface SettingsProps {
-    onBack: () => void;
-}
-
-export default function Settings({ onBack }: SettingsProps) {
+export default function Settings() {
+    const navigate = useNavigate();
     const { user, profile, setProfile, selectedLanguage, selectedIndustry, selectedCountry, setSelectedLanguage, setSelectedIndustry, setSelectedCountry } = useStore();
 
     const [language, setLanguage] = useState<LanguageCode>(selectedLanguage);
@@ -15,7 +13,6 @@ export default function Settings({ onBack }: SettingsProps) {
     const [country, setCountry] = useState<CountryCode>(selectedCountry);
     const [agenticPrompt, setAgenticPrompt] = useState<string>(profile?.agentic_prompt || '');
 
-    // Company fields
     const [companyName, setCompanyName] = useState(profile?.company_name || '');
     const [companyLogoUrl, setCompanyLogoUrl] = useState(profile?.company_logo_url || '');
     const [companyWebsite, setCompanyWebsite] = useState(profile?.company_website || '');
@@ -93,7 +90,6 @@ export default function Settings({ onBack }: SettingsProps) {
             const fileExt = file.name.split('.').pop();
             const fileName = `${user.id}/logo-${Date.now()}.${fileExt}`;
 
-            // Upload to Supabase Storage
             const { data, error } = await supabase!
                 .storage
                 .from('company-logos')
@@ -104,7 +100,6 @@ export default function Settings({ onBack }: SettingsProps) {
 
             if (error) throw error;
 
-            // Get public URL
             const { data: urlData } = supabase!
                 .storage
                 .from('company-logos')
@@ -138,11 +133,10 @@ export default function Settings({ onBack }: SettingsProps) {
     const inputClass = "w-full p-3 border border-gray-200 rounded-xl text-sm text-text focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all";
 
     return (
-        <div className="min-h-screen bg-background-alt pb-20">
-            {/* Header */}
-            <header className="bg-white border-b border-gray-100 sticky top-0 z-10">
+        <div className="min-h-screen bg-gradient-to-br from-cyan-400 via-violet-500 to-fuchsia-400 dark:bg-none dark:bg-[#09090b] pb-20">
+            <header className="bg-white/90 dark:bg-[#09090b]/80 backdrop-blur-xl border-b border-white/20 dark:border-white/5 sticky top-0 z-10">
                 <div className="max-w-3xl mx-auto px-4 h-16 flex items-center justify-between">
-                    <button onClick={onBack} className="flex items-center gap-2 text-text-light hover:text-text transition-colors">
+                    <button onClick={() => navigate(-1)} className="flex items-center gap-2 text-text-light hover:text-text transition-colors">
                         <ArrowLeft className="w-5 h-5" />
                         <span className="font-bold">Back to Dashboard</span>
                     </button>
@@ -163,7 +157,6 @@ export default function Settings({ onBack }: SettingsProps) {
                     <p className="text-text-light mt-1">Manage your preferences. Changes will be used for all future SOP interviews.</p>
                 </div>
 
-                {/* Company Information */}
                 <section className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
                     <div className="flex items-center gap-3 mb-6">
                         <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center text-amber-600">
@@ -176,7 +169,6 @@ export default function Settings({ onBack }: SettingsProps) {
                     </div>
 
                     <div className="space-y-5">
-                        {/* Company Name */}
                         <div>
                             <label className="block text-sm font-semibold text-text mb-1.5 flex items-center gap-2">
                                 <Building2 className="w-4 h-4 text-text-lighter" /> Company Name
@@ -190,7 +182,6 @@ export default function Settings({ onBack }: SettingsProps) {
                             />
                         </div>
 
-                        {/* Logo Upload */}
                         <div>
                             <label className="block text-sm font-semibold text-text mb-1.5 flex items-center gap-2">
                                 <ImagePlus className="w-4 h-4 text-text-lighter" /> Company Logo
@@ -267,7 +258,6 @@ export default function Settings({ onBack }: SettingsProps) {
                                 className="hidden"
                             />
 
-                            {/* URL fallback option */}
                             <details className="mt-3">
                                 <summary className="text-[11px] text-text-lighter cursor-pointer hover:text-primary transition-colors">Or paste a logo URL instead</summary>
                                 <input
@@ -280,61 +270,35 @@ export default function Settings({ onBack }: SettingsProps) {
                             </details>
                         </div>
 
-                        {/* Two-column grid for contact details */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                             <div>
                                 <label className="block text-sm font-semibold text-text mb-1.5 flex items-center gap-2">
                                     <Link className="w-4 h-4 text-text-lighter" /> Website
                                 </label>
-                                <input
-                                    type="url"
-                                    value={companyWebsite}
-                                    onChange={(e) => setCompanyWebsite(e.target.value)}
-                                    placeholder="https://www.yourcompany.com"
-                                    className={inputClass}
-                                />
+                                <input type="url" value={companyWebsite} onChange={(e) => setCompanyWebsite(e.target.value)} placeholder="https://www.yourcompany.com" className={inputClass} />
                             </div>
                             <div>
                                 <label className="block text-sm font-semibold text-text mb-1.5 flex items-center gap-2">
                                     <Mail className="w-4 h-4 text-text-lighter" /> Contact Email
                                 </label>
-                                <input
-                                    type="email"
-                                    value={companyEmail}
-                                    onChange={(e) => setCompanyEmail(e.target.value)}
-                                    placeholder="info@yourcompany.com"
-                                    className={inputClass}
-                                />
+                                <input type="email" value={companyEmail} onChange={(e) => setCompanyEmail(e.target.value)} placeholder="info@yourcompany.com" className={inputClass} />
                             </div>
                             <div>
                                 <label className="block text-sm font-semibold text-text mb-1.5 flex items-center gap-2">
                                     <Phone className="w-4 h-4 text-text-lighter" /> Phone Number
                                 </label>
-                                <input
-                                    type="tel"
-                                    value={companyPhone}
-                                    onChange={(e) => setCompanyPhone(e.target.value)}
-                                    placeholder="+44 20 1234 5678"
-                                    className={inputClass}
-                                />
+                                <input type="tel" value={companyPhone} onChange={(e) => setCompanyPhone(e.target.value)} placeholder="+44 20 1234 5678" className={inputClass} />
                             </div>
                             <div>
                                 <label className="block text-sm font-semibold text-text mb-1.5 flex items-center gap-2">
                                     <MapPinned className="w-4 h-4 text-text-lighter" /> Business Address
                                 </label>
-                                <input
-                                    type="text"
-                                    value={companyAddress}
-                                    onChange={(e) => setCompanyAddress(e.target.value)}
-                                    placeholder="123 Business Street, London, EC1A 1BB"
-                                    className={inputClass}
-                                />
+                                <input type="text" value={companyAddress} onChange={(e) => setCompanyAddress(e.target.value)} placeholder="123 Business Street, London, EC1A 1BB" className={inputClass} />
                             </div>
                         </div>
                     </div>
                 </section>
 
-                {/* Language */}
                 <section className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
                     <div className="flex items-center gap-3 mb-5">
                         <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center text-blue-600">
@@ -361,7 +325,6 @@ export default function Settings({ onBack }: SettingsProps) {
                     </div>
                 </section>
 
-                {/* Country */}
                 <section className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
                     <div className="flex items-center gap-3 mb-5">
                         <div className="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center text-indigo-600">
@@ -405,7 +368,6 @@ export default function Settings({ onBack }: SettingsProps) {
                     </div>
                 </section>
 
-                {/* Industry */}
                 <section className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
                     <div className="flex items-center gap-3 mb-5">
                         <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center text-emerald-600">
@@ -433,7 +395,6 @@ export default function Settings({ onBack }: SettingsProps) {
                     </div>
                 </section>
 
-                {/* Agentic Prompt */}
                 <section className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
                     <div className="flex items-center gap-3 mb-5">
                         <div className="w-10 h-10 bg-violet-100 rounded-xl flex items-center justify-center text-violet-600">
@@ -456,7 +417,6 @@ export default function Settings({ onBack }: SettingsProps) {
                     </p>
                 </section>
 
-                {/* Bottom Save Button */}
                 <div className="flex justify-end pt-4">
                     <button
                         onClick={handleSave}

@@ -1,25 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import { useStore } from './store';
-import { supabase, getProfile, updateProfile } from './lib/supabase';
-import LanguageSelector from './components/LanguageSelector';
-import ModeSelector from './components/ModeSelector';
-import DriveMode from './pages/DriveMode';
-import OfficeMode from './pages/OfficeMode';
-import Auth from './pages/Auth';
-import Dashboard from './pages/Dashboard';
-import SOPViewer from './pages/SOPViewer';
-import IndustrySelector from './components/IndustrySelector';
-import CountrySelector from './components/CountrySelector';
-import ResearchPanel from './components/ResearchPanel';
-import Settings from './pages/Settings';
-import './index.css';
-
-type View = 'auth' | 'dashboard' | 'settings' | 'language' | 'country' | 'industry' | 'research' | 'mode' | 'interview' | 'viewer';
+import AuthProvider from './modules/auth/AuthProvider';
+import AuthGuard from './modules/auth/AuthGuard';
+import Auth from './modules/auth/Auth';
+import Dashboard from './modules/dashboard/Dashboard';
+import Settings from './modules/settings/Settings';
+import InterviewPage from './modules/interview/InterviewPage';
+import SOPViewer from './modules/sop/SOPViewer';
 
 function App() {
-  const [currentView, setCurrentView] = useState<View>('auth');
-  const [selectedSop, setSelectedSop] = useState<any>(null);
-  const { user, setUser, setProfile, setSelectedLanguage, setSelectedIndustry, setSelectedCountry, interviewMode, theme } = useStore();
+  const { theme } = useStore();
 
   // Apply theme
   useEffect(() => {
@@ -38,226 +29,22 @@ function App() {
     return () => mq.removeEventListener('change', handler);
   }, [theme]);
 
-  // Load profile on auth and restore saved preferences
-  const loadProfile = async (userId: string) => {
-    try {
-      const profile = await getProfile(userId);
-      if (profile) {
-        setProfile(profile);
-        if (profile.language_preference) setSelectedLanguage(profile.language_preference as any);
-        if (profile.industry) setSelectedIndustry(profile.industry as any);
-        if (profile.country) setSelectedCountry(profile.country as any);
-      }
-    } catch (err) {
-      console.error('Error loading profile:', err);
-    }
-  };
-
-  // Handle auth session
-  useEffect(() => {
-    supabase?.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        setCurrentView('dashboard');
-        loadProfile(session.user.id);
-      }
-    });
-
-    const { data: { subscription } } = supabase?.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        setCurrentView('dashboard');
-        loadProfile(session.user.id);
-      } else {
-        setCurrentView('auth');
-      }
-    }) || { data: { subscription: null } };
-
-    return () => subscription?.unsubscribe();
-  }, [setUser]);
-
-  const handleStartInterview = () => {
-    setCurrentView('language');
-  };
-
-  const handleLanguageSelected = () => {
-    setCurrentView('country');
-  };
-
-  const handleCountrySelected = () => {
-    setCurrentView('industry');
-  };
-
-  const handleIndustrySelected = async () => {
-    if (user) {
-      try {
-        const { selectedIndustry, selectedCountry, selectedLanguage } = useStore.getState();
-        await updateProfile(user.id, {
-          industry: selectedIndustry,
-          country: selectedCountry,
-          language_preference: selectedLanguage
-        });
-        const updatedProfile = await getProfile(user.id);
-        setProfile(updatedProfile);
-      } catch (err) {
-        console.error('Error saving profile:', err);
-      }
-    }
-    setCurrentView('research');
-  };
-
-  const handleModeSelected = () => {
-    setCurrentView('interview');
-  };
-
-  const handleViewSop = (sop: any) => {
-    setSelectedSop(sop);
-    setCurrentView('viewer');
-  };
-
   return (
     <div className="min-h-screen bg-[#09090b] font-sans">
-      {/* Auth View */}
-      {currentView === 'auth' && <Auth />}
-
-      {/* Dashboard View */}
-      {currentView === 'dashboard' && (
-        <Dashboard
-          onNewSOP={handleStartInterview}
-          onViewSOP={handleViewSop}
-          onSettings={() => setCurrentView('settings')}
-        />
-      )}
-
-      {/* Settings View */}
-      {currentView === 'settings' && (
-        <Settings onBack={() => setCurrentView('dashboard')} />
-      )}
-
-      {/* Language Selection */}
-      {currentView === 'language' && (
-        <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-[#09090b]">
-          <LanguageSelector />
-          <div className="w-full max-w-md mt-6 flex gap-3 px-6">
-            <button
-              onClick={() => setCurrentView('dashboard')}
-              className="flex-1 py-3.5 border border-white/8 rounded-xl text-white/50 font-semibold hover:bg-white/5 hover:text-white/70 transition-all text-sm"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleLanguageSelected}
-              className="flex-1 py-3.5 rounded-xl bg-[#137fec] hover:bg-[#0f66bd] text-white font-bold text-sm tracking-wide transition-all shadow-lg shadow-[#137fec]/20"
-            >
-              Continue
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Country Selection */}
-      {currentView === 'country' && (
-        <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-[#09090b]">
-          <CountrySelector />
-          <div className="w-full max-w-md mt-6 flex gap-3 px-6">
-            <button
-              onClick={() => setCurrentView('language')}
-              className="flex-1 py-3.5 border border-white/8 rounded-xl text-white/50 font-semibold hover:bg-white/5 hover:text-white/70 transition-all text-sm"
-            >
-              Back
-            </button>
-            <button
-              onClick={handleCountrySelected}
-              className="flex-1 py-3.5 rounded-xl bg-[#137fec] hover:bg-[#0f66bd] text-white font-bold text-sm tracking-wide transition-all shadow-lg shadow-[#137fec]/20"
-            >
-              Continue
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Industry Selection */}
-      {currentView === 'industry' && (
-        <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-[#09090b]">
-          <IndustrySelector />
-          <div className="w-full max-w-5xl mt-6 flex gap-3 px-6">
-            <button
-              onClick={() => setCurrentView('country')}
-              className="flex-1 py-3.5 border border-white/8 rounded-xl text-white/50 font-semibold hover:bg-white/5 hover:text-white/70 transition-all text-sm"
-            >
-              Back
-            </button>
-            <button
-              onClick={handleIndustrySelected}
-              className="flex-1 py-3.5 rounded-xl bg-[#137fec] hover:bg-[#0f66bd] text-white font-bold text-sm tracking-wide transition-all shadow-lg shadow-[#137fec]/20"
-            >
-              Continue
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Research View */}
-      {currentView === 'research' && (
-        <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-[#09090b]">
-          <ResearchPanel onContinue={() => setCurrentView('mode')} onBack={() => setCurrentView('industry')} />
-        </div>
-      )}
-
-      {/* Mode Selection */}
-      {currentView === 'mode' && (
-        <div className="min-h-screen flex flex-col items-center justify-center bg-[#09090b]">
-          <ModeSelector onContinue={handleModeSelected} />
-        </div>
-      )}
-
-      {/* Interview View */}
-      {currentView === 'interview' && (
-        <div className="fixed inset-0 z-50">
-          {interviewMode === 'drive' ? (
-            <DriveMode />
-          ) : (
-            <OfficeMode />
-          )}
-
-          {/* Exit Interview Button (Subtle overlay) */}
-          <button
-            onClick={() => setCurrentView('dashboard')}
-            className="fixed top-6 left-6 z-[60] p-2 bg-white/10 hover:bg-white/20 backdrop-blur-sm rounded-full text-white/60 transition-colors"
-          >
-            <ExitIcon className="w-6 h-6" />
-          </button>
-        </div>
-      )}
-
-      {/* Viewer View */}
-      {currentView === 'viewer' && selectedSop && (
-        <SOPViewer
-          sop={selectedSop}
-          onBack={() => setCurrentView('dashboard')}
-        />
-      )}
+      <Routes>
+        <Route element={<AuthProvider />}>
+          <Route path="/auth" element={<Auth />} />
+          <Route element={<AuthGuard />}>
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/settings" element={<Settings />} />
+            <Route path="/interview" element={<InterviewPage />} />
+            <Route path="/sop/:id" element={<SOPViewer />} />
+          </Route>
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        </Route>
+      </Routes>
     </div>
-  );
-}
-
-function ExitIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      className={className}
-      xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M18 6 6 18" />
-      <path d="m6 6 12 12" />
-    </svg>
   );
 }
 
