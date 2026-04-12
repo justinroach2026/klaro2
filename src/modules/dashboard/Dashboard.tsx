@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase, getOverdueSOPs, markSOPReviewed, getInProgressSessions, getDraftSOPs, createDraftSOP } from '../../lib/supabase';
 import { useStore, SUPPORTED_INDUSTRIES } from '../../store';
 import { INDUSTRY_TEMPLATES } from '../../lib/templates';
+import { generateBestPracticeSOP } from '../../lib/ai/interviewer';
 import ThemeToggle from '../../shared/ThemeToggle';
 import {
     Plus,
@@ -66,7 +67,7 @@ export default function Dashboard() {
     const [searchQuery, setSearchQuery] = useState('');
     const [showUserMenu, setShowUserMenu] = useState(false);
     const [depAlertCount, setDepAlertCount] = useState(0);
-    const { user, profile, team, selectedIndustry, selectedLanguage, setIsLoading, setError, isLoading, setInterviewMode } = useStore();
+    const { user, profile, team, selectedIndustry, selectedLanguage, selectedCountry, setIsLoading, setError, isLoading, setInterviewMode, setSelectedSOPTemplate } = useStore();
     const templates = INDUSTRY_TEMPLATES[selectedIndustry] || INDUSTRY_TEMPLATES.other;
     const isCreator = !profile?.role || profile.role === 'creator';
 
@@ -78,6 +79,7 @@ export default function Dashboard() {
                 const response = await supabase
                     ?.from('sops')
                     .select('*, profiles(full_name)')
+                    .eq('status', 'published')
                     .order('updated_at', { ascending: false });
 
                 const data = response?.data;
@@ -143,31 +145,10 @@ export default function Dashboard() {
         fetchDrafts();
     }, [user, setIsLoading, setError]);
 
-    const handleTemplateClick = async (template: typeof templates[0]) => {
-        if (!user || !team) return;
-        setCreatingDraft(template.title);
-        try {
-            const id = await createDraftSOP({
-                teamId: team.id,
-                userId: user.id,
-                title: template.title,
-                content: template.content,
-                tags: template.tags,
-                language: selectedLanguage,
-            });
-            setDraftSOPs(prev => [{
-                id,
-                title: template.title,
-                tags: template.tags,
-                updated_at: new Date().toISOString(),
-                created_at: new Date().toISOString(),
-            }, ...prev]);
-            navigate('/sop/' + id);
-        } catch (err) {
-            console.error('Failed to create draft:', err);
-        } finally {
-            setCreatingDraft(null);
-        }
+    const handleTemplateClick = (template: typeof templates[0]) => {
+        setSelectedSOPTemplate(template);
+        setInterviewMode('office');
+        navigate('/interview');
     };
 
     const handleMarkReviewed = async (sopId: string) => {
@@ -309,7 +290,15 @@ export default function Dashboard() {
                                 </div>
                             ))}
                             {inProgressSessions.map(session => {
-                                const firstUserMsg = session.transcript?.find((m: any) => m.role === 'user')?.content;
+                                const firstUserMsgObj = session.transcript?.find((m: any) => m.role === 'user')?.content;
+                                let firstUserMsg = '';
+                                if (typeof firstUserMsgObj === 'string') {
+                                    firstUserMsg = firstUserMsgObj;
+                                } else if (Array.isArray(firstUserMsgObj)) {
+                                    const textPart = firstUserMsgObj.find((p: any) => p.type === 'text');
+                                    firstUserMsg = textPart ? textPart.text : 'Attached Media';
+                                }
+                                
                                 const label = firstUserMsg
                                     ? (firstUserMsg.length > 60 ? firstUserMsg.substring(0, 60) + '...' : firstUserMsg)
                                     : 'Untitled interview';
@@ -322,9 +311,12 @@ export default function Dashboard() {
                                                 : <Mic className="w-5 h-5 text-violet-500" />}
                                         </div>
                                         <div className="flex-1 min-w-0">
-                                            <p className="font-bold text-gray-800 dark:text-white/80 truncate">{label}</p>
+                                            <div className="flex items-center gap-2">
+                                                <p className="font-bold text-gray-800 dark:text-white/80 truncate">{label}</p>
+                                                <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-violet-100 dark:bg-violet-500/15 text-violet-600 dark:text-violet-300 flex-shrink-0">Draft</span>
+                                            </div>
                                             <p className="text-xs text-violet-500 font-bold mt-0.5 capitalize">
-                                                {session.mode} mode · {msgCount} messages · {new Date(session.created_at).toLocaleDateString()}
+                                                In Progress · {session.mode} mode · {msgCount} messages · {new Date(session.created_at).toLocaleDateString()}
                                             </p>
                                         </div>
                                         <button
@@ -456,7 +448,9 @@ export default function Dashboard() {
                                         <div className="text-2xl">{isCreatingThis ? '⏳' : template.icon}</div>
                                         <div className="flex-1 min-w-0">
                                             <h4 className="font-bold text-sm text-gray-700 dark:text-white/80 group-hover:text-gray-900 dark:group-hover:text-white transition-colors">{template.title}</h4>
-                                            <p className="text-xs text-gray-400 dark:text-white/30 mt-1 leading-relaxed">{template.description}</p>
+                                            <p className="text-xs text-gray-400 dark:text-white/30 mt-1 leading-relaxed">
+                                                {isCreatingThis ? 'Researching industry best practices...' : template.description}
+                                            </p>
                                             <div className="flex flex-wrap gap-1.5 mt-3">
                                                 {template.tags.map(tag => (
                                                     <span key={tag} className="text-[10px] bg-[#137fec]/10 text-[#137fec] px-2 py-0.5 rounded-full font-bold">#{tag}</span>

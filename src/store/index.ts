@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { User } from '@supabase/supabase-js';
+import type { SOPTemplate } from '../lib/templates';
 
 // Supported languages
 export const SUPPORTED_LANGUAGES = {
@@ -99,6 +100,7 @@ interface InterviewMessage {
     role: 'user' | 'ai';
     content: string;
     timestamp: number;
+    attachments?: string[];
 }
 
 interface AppState {
@@ -120,6 +122,9 @@ interface AppState {
     isSpeaking: boolean;
     sessionId: string | null;
 
+    selectedSOPTemplate: SOPTemplate | null;
+    setSelectedSOPTemplate: (template: SOPTemplate | null) => void;
+
     setInterviewMode: (mode: 'drive' | 'office' | null) => void;
     setSelectedLanguage: (lang: LanguageCode) => void;
     setSelectedIndustry: (industry: IndustryCode) => void;
@@ -135,10 +140,20 @@ interface AppState {
     isLoading: boolean;
     isAuthLoading: boolean;
     error: string | null;
+
+    // Live SOP Draft state
+    sopContent: string;
+    pendingUpdate: string | null;
+    sopHistory: string[];
+
     setTheme: (theme: 'light' | 'dark' | 'system') => void;
     setIsLoading: (loading: boolean) => void;
     setIsAuthLoading: (loading: boolean) => void;
     setError: (error: string | null) => void;
+
+    setSopContent: (content: string) => void;
+    setPendingUpdate: (update: string | null) => void;
+    setSopHistory: (history: string[] | ((prev: string[]) => string[])) => void;
 }
 
 export const useStore = create<AppState>((set) => ({
@@ -155,6 +170,8 @@ export const useStore = create<AppState>((set) => ({
     selectedLanguage: 'en',
     selectedIndustry: 'other',
     selectedCountry: 'gb',
+    selectedSOPTemplate: null,
+    setSelectedSOPTemplate: (template) => set({ selectedSOPTemplate: template }),
     interviewMessages: [],
     isRecording: false,
     isSpeaking: false,
@@ -181,6 +198,11 @@ export const useStore = create<AppState>((set) => ({
     isLoading: false,
     isAuthLoading: true,
     error: null,
+
+    sopContent: '',
+    pendingUpdate: null,
+    sopHistory: [],
+
     setTheme: (theme) => {
         localStorage.setItem('klaro-theme', theme);
         set({ theme });
@@ -188,4 +210,10 @@ export const useStore = create<AppState>((set) => ({
     setIsLoading: (loading) => set({ isLoading: loading }),
     setIsAuthLoading: (loading) => set({ isAuthLoading: loading }),
     setError: (error) => set({ error }),
+
+    setSopContent: (content) => set({ sopContent: content }),
+    setPendingUpdate: (update) => set({ pendingUpdate: update }),
+    setSopHistory: (history) => set((state) => ({
+        sopHistory: typeof history === 'function' ? history(state.sopHistory) : history
+    })),
 }));

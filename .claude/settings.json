@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//Users/justinroach/Documents/Antigravity\\\\ Workspaces\\\\ Folder/Klaro\\\\ 2/src/store/**)"
+    ]
+  }
+}

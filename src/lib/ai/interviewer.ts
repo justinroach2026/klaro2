@@ -32,6 +32,79 @@ async function chatCompletion(options: {
     return data.choices?.[0]?.message?.content || '';
 }
 
+/**
+ * Researches best practices for a given query using the server-side search tool.
+ */
+export async function researchBestPractice(query: string, context?: string): Promise<string> {
+    const res = await fetch('/api/ai/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, context }),
+    });
+
+    if (!res.ok) {
+        throw new Error('Research failed');
+    }
+
+    const data = await res.json();
+    return data.choices?.[0]?.message?.content || '';
+}
+
+/**
+ * Generates a research-backed best practice SOP for a given topic and industry.
+ */
+export async function generateBestPracticeSOP(options: {
+    title: string;
+    industry: IndustryCode;
+    language: LanguageCode;
+    country: CountryCode;
+    agenticPrompt?: string | null;
+}): Promise<{ content: string; source: string }> {
+    const industryInfo = SUPPORTED_INDUSTRIES[options.industry];
+    const countryInfo = SUPPORTED_COUNTRIES[options.country];
+
+    // 1. Research phase
+    const researchContent = await researchBestPractice(
+        `Industry standard process and best practices for "${options.title}" in ${industryInfo.name} sector in ${countryInfo.name}. Include specific regulatory requirements like GDPR, HSE, etc if applicable.`,
+        `Industry: ${industryInfo.name}. Region: ${countryInfo.name}.`
+    );
+
+    // 2. Generation phase
+    const industryContext = `INDUSTRY: ${industryInfo.name}\nREGION: ${countryInfo.name}\nTOPIC: ${options.title}\n\nRESEARCH DATA:\n${researchContent}`;
+    
+    const systemPrompt = `You are an expert ${industryInfo.name} consultant and SOP writer specialized in ${countryInfo.name} regulations and business culture.
+    
+    CRITICAL: The user is located in ${countryInfo.name}. You MUST strictly follow the laws, compliance standards (e.g. GDPR, local employment law), and industry norms of ${countryInfo.name}. 
+    Ignore any other regional context clues (like the user's domain name or email) unless they explicitly ask otherwise.
+
+    ${options.agenticPrompt ? `USER CUSTOM INSTRUCTIONS:\n${options.agenticPrompt}\n\n` : ''}
+    ${industryContext}
+    
+    FORMATTING RULES:
+    Strictly follow the Klaro SOP Standard:
+    # [Title]
+    ## 📝 Purpose
+    ## 👥 Roles & Responsibilities
+    ## 🛠 Prerequisites & Tools
+    ## 🏁 Step-by-Step Procedure
+    ## 🎯 Quality Standards
+    ## 💡 Pro Tips & Best Practices
+    ## ⚠️ Common Issues & Troubleshooting
+    
+    TONE: Professional, authoritative, and localized for ${countryInfo.name}.
+    LANGUAGE: ${options.language}`;
+
+    const aiResponse = await chatCompletion({
+        messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: `Generate the best-practice SOP for "${options.title}" using the research data provided. Ensure it is actionable and perfectly formatted.` }
+        ],
+        temperature: 0.4,
+    });
+    
+    return { content: aiResponse, source: researchContent };
+}
+
 // System prompts for different languages
 const SYSTEM_PROMPTS: Record<LanguageCode, string> = {
     en: `You are a professional AI interviewer helping users document their business processes as Standard Operating Procedures (SOPs).
@@ -158,7 +231,7 @@ Gdy masz wystarczające informacje, wskaż gotowość do wygenerowania SOP mówi
 
 interface Message {
     role: 'system' | 'user' | 'assistant';
-    content: string;
+    content: string | any[];
 }
 
 export class AIInterviewer {
@@ -166,7 +239,6 @@ export class AIInterviewer {
     private language: LanguageCode;
     private industry: IndustryCode;
     private country: CountryCode;
-    private agenticPrompt: string | null;
 
     constructor(
         language: LanguageCode = 'en',
@@ -177,7 +249,6 @@ export class AIInterviewer {
         this.language = language;
         this.industry = industry;
         this.country = country;
-        this.agenticPrompt = agenticPrompt;
 
         const industryInfo = SUPPORTED_INDUSTRIES[industry];
         const countryInfo = SUPPORTED_COUNTRIES[country];
@@ -199,16 +270,26 @@ export class AIInterviewer {
     }
 
     /**
-     * Get AI response to user input
+     * Get AI response to user input (Legacy support)
      */
     async getResponse(userMessage: string): Promise<string> {
-        // 1. Detect URLs in the user's message
+        const result = await this.getResponseWithSuggestions(userMessage, '');
+        return result.chatResponse;
+    }
+
+    /**
+     * Get AI response and optional SOP suggestions based on current conversation and SOP content.
+     */
+    async getResponseWithSuggestions(
+        userMessage: string,
+        currentSOP: string,
+        attachments?: string[]
+    ): Promise<{ chatResponse: string; suggestedSOPUpdate?: string }> {
+        // Detect URLs and fetch content (same as getResponse)
         const urlRegex = /(https?:\/\/[^\s]+)/g;
         const urls = userMessage.match(urlRegex) || [];
-
         let contextAddition = '';
 
-        // 2. Fetch content for any detected URLs
         if (urls.length > 0) {
             for (const url of urls) {
                 try {
@@ -227,32 +308,96 @@ export class AIInterviewer {
             }
         }
 
-        // 3. Append to history with context if available
-        const finalMessageObject: Message = {
-            role: 'user',
-            content: contextAddition
-                ? `${userMessage}\n\n[System Note: The user shared links. Here is the extracted text from those links to help you respond:]${contextAddition}`
-                : userMessage,
-        };
+        const finalUserMessage = contextAddition
+            ? `${userMessage}\n\n[System Note: Extracted content from links:]${contextAddition}`
+            : userMessage;
 
-        this.conversationHistory.push(finalMessageObject);
+        let messageContent: string | any[] = finalUserMessage;
+        
+        if (attachments && attachments.length > 0) {
+            messageContent = [{ type: 'text', text: finalUserMessage }];
+            for (const att of attachments) {
+                if (att.startsWith('data:image')) {
+                    messageContent.push({
+                        type: 'image_url',
+                        image_url: { url: att }
+                    });
+                }
+            }
+        }
+
+        this.conversationHistory.push({ role: 'user', content: messageContent });
+
+        const countryInfo = SUPPORTED_COUNTRIES[this.country] || { name: this.country };
+
+        const systemNote = `
+CONTEXT:
+- Target Region: ${countryInfo.name}
+- Industry: ${this.industry}
+- Language: ${this.language}
+
+CRITICAL: You MUST strictly adhere to the regulations and business culture of ${countryInfo.name}. 
+If the user's email or domain suggests a different country, IGNORE IT. Focus on ${countryInfo.name}.
+
+Current SOP Content (for Reference):
+"""
+${currentSOP}
+"""
+
+TASK:
+1. Respond to the user's message conversationally.
+2. If you have gathered new information that improves the SOP, propose an UPDATED version of the FULL SOP.
+3. If no significant update is needed, only provide the chat response.
+
+RESPONSE FORMAT (JSON):
+{
+  "chatResponse": "Your reply to the user",
+  "suggestedSOPUpdate": "The entire updated SOP in Markdown (or null if no update)"
+}
+`;
 
         try {
-            const aiMessage = await chatCompletion({
-                messages: this.conversationHistory,
-                temperature: 0.7,
-                max_tokens: 500, // slightly increased to account for larger context reasoning
+            const result = await chatCompletion({
+                messages: [
+                    ...this.conversationHistory,
+                    { role: 'system', content: systemNote }
+                ],
+                temperature: 0.6,
+                response_format: { type: 'json_object' }
             });
 
+            const parsed = JSON.parse(result);
+            
             this.conversationHistory.push({
                 role: 'assistant',
-                content: aiMessage,
+                content: parsed.chatResponse,
             });
 
-            return aiMessage;
+            return {
+                chatResponse: parsed.chatResponse,
+                suggestedSOPUpdate: parsed.suggestedSOPUpdate || undefined
+            };
         } catch (error) {
-            console.error('AI response error:', error);
-            throw new Error('Failed to get AI response');
+            console.error('AI Suggestion error/JSON parse failed:', error);
+            // Fallback: do a standard completion response to avoid infinite recursion
+            try {
+                const fallbackResult = await chatCompletion({
+                    messages: [
+                        ...this.conversationHistory,
+                        { role: 'user', content: userMessage }
+                    ],
+                    temperature: 0.6
+                });
+                
+                this.conversationHistory.push({
+                    role: 'assistant',
+                    content: fallbackResult,
+                });
+                
+                return { chatResponse: fallbackResult };
+            } catch (fallbackError) {
+                return { chatResponse: "I'm having trouble analyzing the process right now. Could you please click 'Generate SOP Now' to compile what we have, or try breaking your request into smaller pieces?" };
+            }
         }
     }
 

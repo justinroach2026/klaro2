@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useStore, SUPPORTED_INDUSTRIES, SUPPORTED_COUNTRIES } from '../../../store';
 import { Search, ShieldAlert, CheckCircle2, RefreshCw, ArrowRight, Gavel, FileWarning } from 'lucide-react';
-import OpenAI from 'openai';
 
 interface ResearchPanelProps {
     onContinue: () => void;
@@ -18,38 +17,38 @@ export default function ResearchPanel({ onContinue, onBack }: ResearchPanelProps
         const performResearch = async () => {
             setIsResearching(true);
             try {
-                const openai = new OpenAI({
-                    apiKey: import.meta.env.OPENAI_API_KEY,
-                    dangerouslyAllowBrowser: true,
-                });
-
                 const industry = SUPPORTED_INDUSTRIES[selectedIndustry].name;
                 const country = SUPPORTED_COUNTRIES[selectedCountry].name;
 
-                const response = await openai.chat.completions.create({
-                    model: "gpt-4o",
-                    messages: [
-                        {
-                            role: "system",
-                            content: `You are an expert legal and operations researcher for Klaro.
-                            Your goal is to identify current laws, regulations, and industry best practices for a specific industry in a specific country.
-                            Provide exactly 4 concise, actionable "Regulatory Insights" that will affect SOP creation.
-                            Also, suggest if common processes like "Client Onboarding" or "Data Retention" need specific legal clauses.`
-                        },
-                        {
-                            role: "user",
-                            content: `Research the latest updates and laws for the ${industry} industry in ${country}.`
-                        }
-                    ]
+                const res = await fetch('/api/ai/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        model: "gpt-4o",
+                        messages: [
+                            {
+                                role: "system",
+                                content: `You are an expert legal and operations researcher for Klaro, localized for ${country}.
+                                Your goal is to identify current laws, regulations, and industry best practices for the ${industry} industry in ${country}.
+                                Provide exactly 4 concise, actionable "Regulatory Insights" that will affect SOP creation.
+                                Also, suggest if common processes like "Client Onboarding" or "Data Retention" need specific legal clauses.
+                                
+                                IMPORTANT: Respond with JSON format:
+                                { "findings": ["Finding 1", "Finding 2", "Finding 3", "Finding 4"], "warning": { "title": "Example SOP", "reason": "Reason for warning" } }`
+                            },
+                        ],
+                        response_format: { type: "json_object" }
+                    })
                 });
 
-                const content = response.choices[0].message.content || "";
-                const lines = content.split('\n').filter(l => l.trim().length > 0).slice(0, 4);
-                setFindings(lines);
+                if (!res.ok) throw new Error('Proxy error');
+                const data = await res.json();
+                const content = JSON.parse(data.choices?.[0]?.message?.content || '{}');
 
-                setSopWarnings([
-                    { title: "Tenant Onboarding v2", reason: "New data privacy laws in " + country + " require updated consent forms." }
-                ]);
+                setFindings(content.findings || []);
+                if (content.warning) {
+                    setSopWarnings([content.warning]);
+                }
 
             } catch (error) {
                 console.error("Research failed:", error);
@@ -64,7 +63,7 @@ export default function ResearchPanel({ onContinue, onBack }: ResearchPanelProps
 
     return (
         <div className="w-full max-w-5xl mx-auto p-4 md:p-6">
-            <div className="bg-white/3 border border-white/8 rounded-3xl p-6 md:p-10 overflow-hidden relative">
+            <div className="bg-black/30 backdrop-blur-xl shadow-2xl border border-white/20 rounded-3xl p-6 md:p-10 overflow-hidden relative">
                 {isResearching && (
                     <div className="absolute inset-0 bg-[#09090b]/80 backdrop-blur-sm z-10 flex flex-col items-center justify-center">
                         <RefreshCw className="w-12 h-12 text-[#137fec] animate-spin mb-4" />
@@ -79,13 +78,13 @@ export default function ResearchPanel({ onContinue, onBack }: ResearchPanelProps
                     </div>
                     <div>
                         <h1 className="text-2xl font-black text-white tracking-tight">Regulatory Analysis</h1>
-                        <p className="text-sm text-white/40">{SUPPORTED_INDUSTRIES[selectedIndustry].name} • {SUPPORTED_COUNTRIES[selectedCountry].name}</p>
+                        <p className="text-sm font-medium text-white/90">{SUPPORTED_INDUSTRIES[selectedIndustry].name} • {SUPPORTED_COUNTRIES[selectedCountry].name}</p>
                     </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
-                    <div className="bg-white/3 border border-white/6 rounded-2xl p-6">
-                        <h3 className="text-[10px] font-black text-white/30 uppercase tracking-widest mb-4 flex items-center gap-2">
+                    <div className="bg-black/30 border border-white/10 rounded-2xl p-6">
+                        <h3 className="text-xs font-black text-white/80 uppercase tracking-widest mb-4 flex items-center gap-2">
                             <Search className="w-4 h-4" />
                             Latest Database Research
                         </h3>
@@ -93,27 +92,27 @@ export default function ResearchPanel({ onContinue, onBack }: ResearchPanelProps
                             {findings.map((finding, i) => (
                                 <div key={i} className="flex gap-3">
                                     <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
-                                    <p className="text-white/60 text-sm leading-relaxed">{finding}</p>
+                                    <p className="text-white font-medium text-sm leading-relaxed">{finding}</p>
                                 </div>
                             ))}
                         </div>
                     </div>
 
                     {sopWarnings.length > 0 && (
-                        <div className="bg-red-500/5 border border-red-500/10 rounded-2xl p-6">
-                            <h3 className="text-[10px] font-black text-red-400/70 uppercase tracking-widest mb-4 flex items-center gap-2">
+                        <div className="bg-red-950/50 border border-red-500/30 shadow-inner rounded-2xl p-6">
+                            <h3 className="text-xs font-black text-red-300 uppercase tracking-widest mb-4 flex items-center gap-2">
                                 <FileWarning className="w-4 h-4" />
                                 Impact on Existing SOPs
                             </h3>
                             <div className="space-y-4">
                                 {sopWarnings.map((warning, i) => (
-                                    <div key={i} className="flex gap-4 items-start bg-white/3 border border-red-500/10 p-4 rounded-xl">
+                                    <div key={i} className="flex gap-4 items-start bg-black/40 border border-red-500/20 p-4 rounded-xl">
                                         <ShieldAlert className="w-5 h-5 text-red-400 shrink-0 mt-1" />
                                         <div>
-                                            <p className="font-bold text-white/80 text-sm">{warning.title}</p>
-                                            <p className="text-white/40 text-xs mt-1 leading-relaxed">{warning.reason}</p>
+                                            <p className="font-bold text-white text-sm">{warning.title}</p>
+                                            <p className="text-red-200/90 font-medium text-xs mt-1 leading-relaxed">{warning.reason}</p>
                                         </div>
-                                        <button className="text-[#137fec] font-bold text-xs ml-auto hover:underline uppercase tracking-wider flex-shrink-0">Update Now</button>
+                                        <button className="text-blue-400 font-bold text-xs ml-auto hover:underline uppercase tracking-wider flex-shrink-0 hover:text-blue-300">Update Now</button>
                                     </div>
                                 ))}
                             </div>
@@ -124,7 +123,7 @@ export default function ResearchPanel({ onContinue, onBack }: ResearchPanelProps
                 <div className="mt-10 flex gap-4">
                     <button
                         onClick={onBack}
-                        className="flex-1 py-3.5 border border-white/8 rounded-xl text-white/50 font-semibold hover:bg-white/5 hover:text-white/70 transition-all text-sm"
+                        className="flex-1 py-3.5 border border-white/20 bg-black/20 rounded-xl text-white/90 font-bold hover:bg-black/40 hover:text-white transition-all text-sm"
                     >
                         Go Back
                     </button>
