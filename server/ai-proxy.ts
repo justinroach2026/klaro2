@@ -225,9 +225,14 @@ Format your response as clear, concise bullet points.`
 
 function readBody(req: any): Promise<string> {
     return new Promise((resolve, reject) => {
-        let body = '';
-        req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
-        req.on('end', () => resolve(body));
+        const chunks: Buffer[] = [];
+        req.on('data', (chunk: Buffer) => { 
+            chunks.push(chunk); 
+        });
+        req.on('end', () => {
+            const buffer = Buffer.concat(chunks);
+            resolve(buffer.toString('utf-8'));
+        });
         req.on('error', reject);
     });
 }
