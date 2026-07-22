@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
-import { useStore } from '../../store';
+import { useStore, messageText } from '../../store';
 import { voiceEngine } from '../../lib/voice';
 import { AIInterviewer } from '../../lib/ai/interviewer';
 import { supabase, createInterviewSession, saveInterviewTranscript, completeInterviewSession, loadInterviewSession } from '../../lib/supabase';
@@ -179,6 +179,8 @@ export default function OfficeMode() {
                                         .select('id')
                                         .single();
 
+                                    if (error) throw error;
+
                                     if (data?.id) {
                                         // We could save this draft ID, but for now just establishing the row 
                                         // ensures the user sees a Draft on their dashboard.
@@ -288,14 +290,9 @@ export default function OfficeMode() {
             const teamId = team?.id || profile?.team_id;
 
             const firstUserMsgContent = interviewMessages.find(m => m.role === 'user')?.content;
-            let firstUserText = 'Untitled SOP';
-            if (typeof firstUserMsgContent === 'string') {
-                firstUserText = firstUserMsgContent;
-            } else if (Array.isArray(firstUserMsgContent)) {
-                const textPart = firstUserMsgContent.find(p => p.type === 'text');
-                if (textPart) firstUserText = textPart.text;
-                else firstUserText = 'Attached Media SOP';
-            }
+            const extracted = firstUserMsgContent ? messageText(firstUserMsgContent) : '';
+            const firstUserText = extracted
+                || (Array.isArray(firstUserMsgContent) ? 'Attached Media SOP' : 'Untitled SOP');
 
             const title = firstUserText.length > 50 ? firstUserText.substring(0, 50) + '...' : firstUserText;
 
@@ -434,11 +431,11 @@ export default function OfficeMode() {
                                         }`}>
                                         {message.role === 'ai' ? (
                                             <div className="prose prose-sm dark:prose-invert max-w-none prose-p:mb-2 prose-p:last:mb-0 prose-ul:list-disc prose-ol:list-decimal prose-ul:ml-5 prose-ol:ml-5 prose-li:pl-1">
-                                                <ReactMarkdown>{message.content}</ReactMarkdown>
+                                                <ReactMarkdown>{messageText(message.content)}</ReactMarkdown>
                                             </div>
                                         ) : (
                                             <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                                                {typeof message.content === 'string' ? message.content : 'Multi-part message'}
+                                                {messageText(message.content) || 'Multi-part message'}
                                             </p>
                                         )}
                                         {message.attachments && message.attachments.length > 0 && (

@@ -11,7 +11,6 @@ import PDFRenderer from '../../components/PDFRenderer';
 import {
     Download,
     ChevronLeft,
-    Calendar,
     History,
     Edit3,
     Eye,
@@ -99,7 +98,6 @@ function SOPViewerContent({ initialSop, onBack }: { initialSop: SopData; onBack:
     const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const isTemplate = sop.id.startsWith('template-');
     const isViewer = profile?.role === 'viewer';
-    const isOwner = sop.owner_id === user?.id;
     const [isDraft, setIsDraft] = useState(sop.status === 'draft');
     const [isPublishing, setIsPublishing] = useState(false);
 
@@ -492,14 +490,10 @@ function SOPViewerContent({ initialSop, onBack }: { initialSop: SopData; onBack:
                     <aside className="w-80 shrink-0 space-y-6 print:hidden">
                         <OwnershipPanel
                             sopId={sop.id}
-                            initialOwnerId={sop.owner_id}
-                            initialIntervalDays={sop.review_interval_days}
-                            lastReviewedAt={sop.last_reviewed_at}
-                            nextReviewAt={sop.next_review_at}
-                            currentRole={profile?.role as 'creator' | 'viewer'}
-                            onUpdate={(ownerId, intervalDays) => {
-                                setSop(prev => ({ ...prev, owner_id: ownerId, review_interval_days: intervalDays }));
-                            }}
+                            ownerId={sop.owner_id ?? null}
+                            reviewIntervalDays={sop.review_interval_days ?? null}
+                            lastReviewedAt={sop.last_reviewed_at ?? null}
+                            nextReviewAt={sop.next_review_at ?? null}
                         />
 
                         <div className="bg-[#121214] border border-white/5 rounded-2xl p-5 shadow-xl relative overflow-hidden">
@@ -586,31 +580,16 @@ function SOPViewerContent({ initialSop, onBack }: { initialSop: SopData; onBack:
                 }}
             />
 
-            {showLinkPicker && (
-                <div className="fixed inset-0 z-50 flex justify-end">
-                    <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowLinkPicker(false)} />
-                    <div className="relative w-full max-w-md h-full bg-[#121214] border-l border-white/10 animate-slide-in-right">
-                        <div className="h-full flex flex-col p-6">
-                            <div className="flex items-center justify-between mb-6 pb-6 border-b border-white/5">
-                                <div>
-                                    <h2 className="text-lg font-black text-white">Manage Links</h2>
-                                    <p className="text-xs text-white/40">Connect related documentation</p>
-                                </div>
-                                <button onClick={() => setShowLinkPicker(false)} className="p-2 text-white/30 hover:bg-white/5 hover:text-white rounded-xl transition-all">
-                                    <XIcon className="w-5 h-5" />
-                                </button>
-                            </div>
-                            <SOPLinkPicker
-                                currentSopId={sop.id}
-                                selectedSopIds={sop.related_sop_ids || []}
-                                onChange={async (newIds) => {
-                                    setSop(prev => ({ ...prev, related_sop_ids: newIds }));
-                                }}
-                            />
-                        </div>
-                    </div>
-                </div>
-            )}
+            {/* SOPLinkPicker renders its own modal chrome, including backdrop and close control. */}
+            <SOPLinkPicker
+                sopId={sop.id}
+                currentRelatedIds={sop.related_sop_ids || []}
+                isOpen={showLinkPicker}
+                onClose={() => setShowLinkPicker(false)}
+                onUpdate={(newIds) => {
+                    setSop(prev => ({ ...prev, related_sop_ids: newIds }));
+                }}
+            />
 
             <PDFRenderer
                 title={sop.title}

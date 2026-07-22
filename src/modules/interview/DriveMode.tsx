@@ -1,10 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useStore } from '../../store';
+import { useStore, messageText } from '../../store';
 import { voiceEngine } from '../../lib/voice';
 import { AIInterviewer } from '../../lib/ai/interviewer';
 import { Mic, Square, Play, RefreshCw, ArrowLeft } from 'lucide-react';
-import { supabase, createInterviewSession, saveInterviewTranscript, completeInterviewSession, loadInterviewSession } from '../../lib/supabase';
+import { supabase, createInterviewSession, saveInterviewTranscript, completeInterviewSession } from '../../lib/supabase';
 
 type SessionStatus = 'idle' | 'speaking' | 'listening' | 'processing';
 
@@ -104,7 +104,8 @@ export default function DriveMode() {
             const { user, team } = useStore.getState();
             if (!user || !team) throw new Error('Not authenticated');
 
-            const firstUserMessage = useStore.getState().interviewMessages.find(m => m.role === 'user')?.content || 'Untitled SOP';
+            const firstUserContent = useStore.getState().interviewMessages.find(m => m.role === 'user')?.content;
+            const firstUserMessage = (firstUserContent ? messageText(firstUserContent) : '') || 'Untitled SOP';
             const title = firstUserMessage.length > 50 ? firstUserMessage.substring(0, 50) + '...' : firstUserMessage;
 
             const content = await aiInterviewer.current!.generateSOP(title);

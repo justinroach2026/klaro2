@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase, getOverdueSOPs, markSOPReviewed, getInProgressSessions, getDraftSOPs, createDraftSOP } from '../../lib/supabase';
+import { supabase, getOverdueSOPs, markSOPReviewed, getInProgressSessions, getDraftSOPs } from '../../lib/supabase';
 import { useStore, SUPPORTED_INDUSTRIES } from '../../store';
 import { INDUSTRY_TEMPLATES } from '../../lib/templates';
-import { generateBestPracticeSOP } from '../../lib/ai/interviewer';
 import ThemeToggle from '../../shared/ThemeToggle';
 import {
     Plus,
@@ -63,11 +62,10 @@ export default function Dashboard() {
     const [overdueSOPs, setOverdueSOPs] = useState<OverdueSOP[]>([]);
     const [inProgressSessions, setInProgressSessions] = useState<{ id: string; mode: 'drive' | 'office'; language: string; transcript: any[]; created_at: string }[]>([]);
     const [draftSOPs, setDraftSOPs] = useState<{ id: string; title: string; tags: string[]; updated_at: string; created_at: string }[]>([]);
-    const [creatingDraft, setCreatingDraft] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [showUserMenu, setShowUserMenu] = useState(false);
     const [depAlertCount, setDepAlertCount] = useState(0);
-    const { user, profile, team, selectedIndustry, selectedLanguage, selectedCountry, setIsLoading, setError, isLoading, setInterviewMode, setSelectedSOPTemplate } = useStore();
+    const { user, profile, selectedIndustry, setIsLoading, setError, isLoading, setInterviewMode, setSelectedSOPTemplate } = useStore();
     const templates = INDUSTRY_TEMPLATES[selectedIndustry] || INDUSTRY_TEMPLATES.other;
     const isCreator = !profile?.role || profile.role === 'creator';
 
@@ -437,19 +435,17 @@ export default function Dashboard() {
 
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                             {templates.map((template) => {
-                                const isCreatingThis = creatingDraft === template.title;
                                 return (
                                     <button
                                         key={template.title}
                                         onClick={() => handleTemplateClick(template)}
-                                        disabled={creatingDraft !== null}
                                         className="flex flex-col items-start gap-3 p-6 bg-white dark:bg-white/3 border border-gray-100 dark:border-white/6 rounded-2xl hover:border-gray-200 dark:hover:border-white/12 hover:shadow-md dark:hover:bg-white/6 hover:-translate-y-0.5 transition-all text-left group shadow-sm disabled:opacity-60 disabled:cursor-wait"
                                     >
-                                        <div className="text-2xl">{isCreatingThis ? '⏳' : template.icon}</div>
+                                        <div className="text-2xl">{template.icon}</div>
                                         <div className="flex-1 min-w-0">
                                             <h4 className="font-bold text-sm text-gray-700 dark:text-white/80 group-hover:text-gray-900 dark:group-hover:text-white transition-colors">{template.title}</h4>
                                             <p className="text-xs text-gray-400 dark:text-white/30 mt-1 leading-relaxed">
-                                                {isCreatingThis ? 'Researching industry best practices...' : template.description}
+                                                {template.description}
                                             </p>
                                             <div className="flex flex-wrap gap-1.5 mt-3">
                                                 {template.tags.map(tag => (

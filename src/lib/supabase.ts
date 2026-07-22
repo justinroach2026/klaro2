@@ -371,7 +371,7 @@ export const createInterviewSession = async (
 // Overwrite the transcript for an existing session
 export const saveInterviewTranscript = async (
     sessionId: string,
-    transcript: { role: string; content: string; timestamp: number }[],
+    transcript: { role: string; content: unknown; timestamp: number }[],
 ): Promise<void> => {
     const { error } = await supabase
         ?.from('interview_sessions')

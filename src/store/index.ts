@@ -96,12 +96,24 @@ interface Team {
     trial_ends_at: string | null;
 }
 
+// Messages carrying image attachments are sent as multimodal content blocks
+// rather than a plain string, so transcripts contain both shapes.
+export type MessageContentPart =
+    | { type: 'text'; text: string }
+    | { type: 'image_url'; image_url: { url: string } };
+
 interface InterviewMessage {
     role: 'user' | 'ai';
-    content: string;
+    content: string | MessageContentPart[];
     timestamp: number;
     attachments?: string[];
 }
+
+// Flattens either content shape to plain text for display and titles.
+export const messageText = (content: string | MessageContentPart[]): string =>
+    typeof content === 'string'
+        ? content
+        : content.map(part => (part.type === 'text' ? part.text : '')).join('').trim();
 
 interface AppState {
     // Auth state
