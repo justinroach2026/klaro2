@@ -4,6 +4,8 @@ import { useStore } from './store';
 import AuthProvider from './modules/auth/AuthProvider';
 import AuthGuard from './modules/auth/AuthGuard';
 import Auth from './modules/auth/Auth';
+import AuthCallback from './modules/auth/AuthCallback';
+import ResetPassword from './modules/auth/ResetPassword';
 import Dashboard from './modules/dashboard/Dashboard';
 import Settings from './modules/settings/Settings';
 import InterviewPage from './modules/interview/InterviewPage';
@@ -34,6 +36,8 @@ function App() {
       <Routes>
         <Route element={<AuthProvider />}>
           <Route path="/auth" element={<Auth />} />
+          <Route path="/auth/callback" element={<AuthCallback />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
           <Route element={<AuthGuard />}>
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/settings" element={<Settings />} />

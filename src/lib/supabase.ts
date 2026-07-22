@@ -176,6 +176,14 @@ export const resetPasswordForEmail = async (email: string) => {
     return data;
 };
 
+export const updatePassword = async (password: string) => {
+    const { data, error } = await supabase?.auth.updateUser({ password })
+        || { data: null, error: new Error('Supabase not initialized') };
+
+    if (error) throw error;
+    return data;
+};
+
 export const signOut = async () => {
     const { error } = await supabase?.auth.signOut() || { error: null };
     if (error) throw error;
