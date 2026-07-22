@@ -6,20 +6,20 @@ import { Loader2, AlertCircle } from 'lucide-react';
 // Landing page for links emailed by Supabase (confirmation + magic link).
 // The client is created with detectSessionInUrl, so it consumes the tokens from
 // the URL on load; we just wait for the resulting session and route onwards.
+// Supabase reports link failures (expired, already used) in the URL itself,
+// as query params for PKCE and hash fragments for the implicit flow.
+const readUrlError = (): string | null => {
+    const params = new URLSearchParams(window.location.search);
+    const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    return params.get('error_description') || hash.get('error_description');
+};
+
 export default function AuthCallback() {
-    const [error, setError] = useState<string | null>(null);
+    const [error, setError] = useState<string | null>(readUrlError);
     const navigate = useNavigate();
 
     useEffect(() => {
-        // Supabase reports link failures (expired, already used) in the URL itself,
-        // as query params for PKCE and hash fragments for the implicit flow.
-        const params = new URLSearchParams(window.location.search);
-        const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
-        const urlError = params.get('error_description') || hash.get('error_description');
-        if (urlError) {
-            setError(urlError);
-            return;
-        }
+        if (readUrlError()) return;
 
         let settled = false;
         const done = () => {

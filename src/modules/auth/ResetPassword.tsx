@@ -56,8 +56,8 @@ export default function ResetPassword() {
             await updatePassword(password);
             window.history.replaceState({}, '', window.location.pathname);
             navigate('/dashboard', { replace: true });
-        } catch (err: any) {
-            setError(err.message || 'Could not update password');
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Could not update password');
         } finally {
             setLoading(false);
         }
