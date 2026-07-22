@@ -3,10 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import { useStore, messageText } from '../../store';
 import { voiceEngine } from '../../lib/voice';
-import { AIInterviewer } from '../../lib/ai/interviewer';
-import { supabase, createInterviewSession, saveInterviewTranscript, completeInterviewSession, loadInterviewSession } from '../../lib/supabase';
-import { generateBestPracticeSOP } from '../../lib/ai/interviewer';
-import { Mic, Send, ArrowLeft, Check, X, RotateCcw, FileText, Sparkles, ImagePlus } from 'lucide-react';
+import { AIInterviewer, generateBestPracticeSOP } from '../../lib/ai/interviewer';
+import { supabase, createInterviewSession, saveInterviewTranscript, completeInterviewSession, loadInterviewSession, updateInterviewSessionMode, saveDraftSOP, getSOPContent } from '../../lib/supabase';
+import { getStarterQuestions } from '../../lib/templates';
+import { Mic, Send, ArrowLeft, Check, X, RotateCcw, FileText, Sparkles, ImagePlus, Car } from 'lucide-react';
 
 export default function OfficeMode() {
     const navigate = useNavigate();
@@ -30,6 +30,10 @@ export default function OfficeMode() {
         setPendingUpdate,
         sopHistory: history,
         setSopHistory: setHistory,
+        setDraftSOPId,
+        autosaveStatus,
+        setAutosaveStatus,
+        setInterviewMode,
     } = useStore();
 
     const [inputText, setInputText] = useState('');
@@ -39,11 +43,11 @@ export default function OfficeMode() {
     const [isGenerating, setIsGenerating] = useState(false);
     const [isComplete, setIsComplete] = useState(false);
     const [isRestoringSession, setIsRestoringSession] = useState(true);
-
     const [isResearching, setIsResearching] = useState(false);
+
     const { selectedSOPTemplate } = useStore();
 
-    const aiInterviewer = useRef(new AIInterviewer(selectedLanguage, selectedIndustry, selectedCountry, profile?.agentic_prompt));
+    const aiInterviewer = useRef(new AIInterviewer(selectedLanguage, selectedIndustry, selectedCountry, profile?.agentic_prompt, getStarterQuestions(selectedSOPTemplate, selectedIndustry)));
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const sessionIdRef = useRef<string | null>(sessionId);
@@ -84,7 +88,16 @@ export default function OfficeMode() {
         const restore = async () => {
             if (!user) { setIsRestoringSession(false); return; }
             try {
-                const existing = await loadInterviewSession(user.id, 'office');
+                const store = useStore.getState();
+                if (store.interviewMessages.length > 0) {
+                    // In-app mode switch: the store already holds the live session —
+                    // just replay it into this mode's interviewer for full context
+                    aiInterviewer.current.loadHistory(
+                        store.interviewMessages.map(m => ({ role: m.role, content: messageText(m.content) }))
+                    );
+                    return;
+                }
+                const existing = await loadInterviewSession(user.id);
                 if (existing && existing.transcript?.length > 0) {
                     clearMessages();
                     existing.transcript.forEach((m: any) => addMessage({ role: m.role, content: m.content }));
@@ -92,6 +105,18 @@ export default function OfficeMode() {
                     aiInterviewer.current.loadHistory(existing.transcript);
                     sessionIdRef.current = existing.id;
                     setSessionId(existing.id);
+                    if (existing.mode !== 'office') {
+                        await updateInterviewSessionMode(existing.id, 'office');
+                    }
+                    // Restore the live draft document linked to this session
+                    if (existing.sop_id && !store.sopContent) {
+                        const draft = await getSOPContent(existing.sop_id);
+                        if (draft?.status === 'draft' && draft.content) {
+                            setDraftSOPId(draft.id);
+                            setSopContent(draft.content);
+                            setHistory([draft.content]);
+                        }
+                    }
                 }
             } catch (err) {
                 console.error('Failed to restore session:', err);
@@ -140,68 +165,39 @@ export default function OfficeMode() {
 
         if (interviewMessages.length === 0 && !isRestoringSession) {
             greet();
-
-            // If a template is selected, research best practice and show it on the right
-            if (selectedSOPTemplate) {
-                const initSOP = async () => {
-                    setIsResearching(true);
-                    try {
-                        const { content } = await generateBestPracticeSOP({
-                            title: selectedSOPTemplate.title,
-                            industry: selectedIndustry,
-                            language: selectedLanguage,
-                            country: selectedCountry,
-                            agenticPrompt: profile?.agentic_prompt
-                        });
-                        if (!sopContent) {
-                            setSopContent(content);
-                            setHistory([content]);
-
-                            // Initialize actual Draft in Database so it appears on Dashboard immediately
-                            try {
-                                const { user, team, profile: usrProfile } = useStore.getState();
-                                const teamId = team?.id || usrProfile?.team_id;
-                                if (user && teamId) {
-                                    // Use the supabase instance to directly create the draft
-                                    const { data, error } = await supabase!
-                                        .from('sops')
-                                        .insert({
-                                            team_id: teamId,
-                                            created_by: user.id,
-                                            title: selectedSOPTemplate.title,
-                                            content: content,
-                                            tags: selectedSOPTemplate.tags || [],
-                                            language: selectedLanguage,
-                                            version: 1,
-                                            status: 'draft',
-                                            related_sop_ids: []
-                                        })
-                                        .select('id')
-                                        .single();
-
-                                    if (error) throw error;
-
-                                    if (data?.id) {
-                                        // We could save this draft ID, but for now just establishing the row 
-                                        // ensures the user sees a Draft on their dashboard.
-                                        console.log("Draft created successfully:", data.id);
-                                    }
-                                }
-                            } catch (e) {
-                                console.error('Silent failure creating immediate draft:', e);
-                            }
-                        }
-                    } catch (err) {
-                        console.error('Failed to pre-fill best practice:', err);
-                        setSopContent(selectedSOPTemplate.content || '');
-                    } finally {
-                        setIsResearching(false);
-                    }
-                };
-                initSOP();
-            }
         }
-    }, [selectedLanguage, selectedSOPTemplate, isRestoringSession, interviewMessages.length]);
+    }, [selectedLanguage, isRestoringSession, interviewMessages.length]);
+
+    // Auto-save the live SOP draft (debounced) so on-screen work is never lost
+    useEffect(() => {
+        if (!sopContent || isRestoringSession || isComplete) return;
+
+        const timeout = setTimeout(async () => {
+            const { user: u, team: t, profile: p, draftSOPId: currentDraftId, selectedSOPTemplate: template } = useStore.getState();
+            const teamId = t?.id || p?.team_id;
+            if (!u || !teamId) return;
+            try {
+                setAutosaveStatus('saving');
+                const id = await saveDraftSOP({
+                    draftId: currentDraftId,
+                    teamId,
+                    userId: u.id,
+                    title: template?.title || 'Untitled SOP',
+                    content: sopContent,
+                    tags: template?.tags || [],
+                    language: selectedLanguage,
+                    sessionId: sessionIdRef.current,
+                });
+                if (id !== currentDraftId) setDraftSOPId(id);
+                setAutosaveStatus('saved');
+            } catch (err) {
+                console.error('SOP autosave failed:', err);
+                setAutosaveStatus('idle');
+            }
+        }, 1500);
+
+        return () => clearTimeout(timeout);
+    }, [sopContent, isRestoringSession, isComplete, selectedLanguage, setAutosaveStatus, setDraftSOPId]);
 
     useEffect(() => {
         const lastMessage = interviewMessages[interviewMessages.length - 1];
@@ -282,6 +278,80 @@ export default function OfficeMode() {
         setPendingUpdate(null);
     };
 
+    // Load the curated best-practice template as the starting document (no AI call);
+    // the autosave effect persists it as a draft
+    const handleLoadTemplate = () => {
+        if (!selectedSOPTemplate) return;
+        const content = selectedSOPTemplate.content || '';
+        setSopContent(content);
+        setHistory([content]);
+
+        // Kick off the conversation: confirm the load and surface the starter
+        // questions as talking points, so the user knows exactly where to begin
+        const questions = getStarterQuestions(selectedSOPTemplate, selectedIndustry);
+        const title = selectedSOPTemplate.title;
+        const intro = {
+            en: `I've loaded the "${title}" best-practice template as your starting draft. Let's tailor it to your business — here are some things to think about:`,
+            es: `He cargado la plantilla de buenas prácticas "${title}" como borrador inicial. Vamos a adaptarla a tu negocio; aquí tienes algunas cuestiones para reflexionar:`,
+            nl: `Ik heb het best-practice sjabloon "${title}" als startconcept geladen. Laten we het aanpassen aan jouw bedrijf — denk alvast na over het volgende:`,
+            fr: `J'ai chargé le modèle de bonnes pratiques « ${title} » comme brouillon de départ. Adaptons-le à votre entreprise — voici quelques pistes de réflexion :`,
+            de: `Ich habe die Best-Practice-Vorlage „${title}" als ersten Entwurf geladen. Passen wir sie an dein Unternehmen an — hier ein paar Denkanstöße:`,
+            it: `Ho caricato il modello di best practice "${title}" come bozza iniziale. Adattiamolo alla tua azienda — ecco alcuni spunti su cui riflettere:`,
+            pt: `Carreguei o modelo de boas práticas "${title}" como rascunho inicial. Vamos adaptá-lo ao seu negócio — aqui estão alguns pontos para refletir:`,
+            pl: `Wczytałem szablon dobrych praktyk „${title}" jako wstępny szkic. Dostosujmy go do Twojej firmy — oto kilka kwestii do przemyślenia:`,
+        }[selectedLanguage] || `I've loaded the "${title}" template as your starting draft.`;
+        const outro = {
+            en: 'Answer in the chat — start anywhere you like — and I\'ll update the draft as we go.',
+            es: 'Responde en el chat, empieza por donde quieras, e iré actualizando el borrador sobre la marcha.',
+            nl: 'Antwoord in de chat — begin waar je wilt — dan werk ik het concept gaandeweg bij.',
+            fr: 'Répondez dans le chat — commencez où vous voulez — et je mettrai le brouillon à jour au fur et à mesure.',
+            de: 'Antworte im Chat — fang an, wo du möchtest — ich aktualisiere den Entwurf laufend.',
+            it: 'Rispondi nella chat — inizia da dove preferisci — e aggiornerò la bozza man mano.',
+            pt: 'Responda no chat — comece por onde quiser — e vou atualizando o rascunho.',
+            pl: 'Odpowiadaj na czacie — zacznij od czego chcesz — a ja będę na bieżąco aktualizować szkic.',
+        }[selectedLanguage] || '';
+
+        const message = `${intro}\n\n${questions.map((q) => `- ${q}`).join('\n')}\n\n${outro}`;
+        addMessage({ role: 'ai', content: message });
+        // Keep the interviewer's context in sync so its follow-ups build on this
+        aiInterviewer.current.loadHistory([{ role: 'ai', content: message }]);
+    };
+
+    // Optional AI upgrade of the current document: researched best practice for
+    // this industry/country arrives as a pending update the user accepts or rejects
+    const handleEnhanceWithResearch = async () => {
+        if (isResearching || pendingUpdate) return;
+        const title = selectedSOPTemplate?.title
+            || sopContent.match(/^#+\s*(.+)$/m)?.[1]?.trim()
+            || 'Standard Operating Procedure';
+        setIsResearching(true);
+        try {
+            const { content } = await generateBestPracticeSOP({
+                title,
+                industry: selectedIndustry,
+                language: selectedLanguage,
+                country: selectedCountry,
+                agenticPrompt: profile?.agentic_prompt
+            });
+            if (content && !useStore.getState().sopContent.includes(content)) {
+                setPendingUpdate(content);
+            }
+        } catch (err) {
+            console.error('AI research failed:', err);
+        } finally {
+            setIsResearching(false);
+        }
+    };
+
+    const handleSwitchToDrive = async () => {
+        try {
+            if (sessionIdRef.current) await updateInterviewSessionMode(sessionIdRef.current, 'drive');
+        } catch (err) {
+            console.error('Failed to persist mode switch:', err);
+        }
+        setInterviewMode('drive');
+    };
+
     const handleGenerateSOP = async () => {
         setIsGenerating(true);
         try {
@@ -300,24 +370,39 @@ export default function OfficeMode() {
             const finalContent = sopContent || await aiInterviewer.current.generateSOP(title);
             const metadata = await aiInterviewer.current.extractMetadata(title);
 
-            const { error } = await supabase!
-                .from('sops')
-                .insert({
-                    team_id: teamId,
-                    title: title,
-                    content: finalContent,
-                    language: selectedLanguage,
-                    tags: metadata.tags || [],
-                    version: 1,
-                    created_by: user.id,
-                    status: 'published',
-                    related_sop_ids: []
-                });
-
-            if (error) throw error;
+            // Publish the autosaved draft in place when one exists, otherwise insert
+            const currentDraftId = useStore.getState().draftSOPId;
+            if (currentDraftId) {
+                const { error } = await supabase!
+                    .from('sops')
+                    .update({
+                        title: title,
+                        content: finalContent,
+                        tags: metadata.tags || [],
+                        status: 'published',
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', currentDraftId);
+                if (error) throw error;
+            } else {
+                const { error } = await supabase!
+                    .from('sops')
+                    .insert({
+                        team_id: teamId,
+                        title: title,
+                        content: finalContent,
+                        language: selectedLanguage,
+                        tags: metadata.tags || [],
+                        version: 1,
+                        created_by: user.id,
+                        status: 'published',
+                        related_sop_ids: []
+                    });
+                if (error) throw error;
+            }
 
             if (sessionIdRef.current) {
-                await completeInterviewSession(sessionIdRef.current, undefined);
+                await completeInterviewSession(sessionIdRef.current, currentDraftId ?? undefined);
                 sessionIdRef.current = null;
                 setSessionId(null);
 
@@ -326,6 +411,8 @@ export default function OfficeMode() {
                 setSopContent('');
                 setPendingUpdate(null);
                 setHistory([]);
+                setDraftSOPId(null);
+                setAutosaveStatus('idle');
             }
 
             setIsComplete(true);
@@ -392,6 +479,16 @@ export default function OfficeMode() {
                         </h2>
                         <p className="text-sm text-gray-500 dark:text-white/40">Collaborative process documentation</p>
                     </div>
+                    {!isComplete && (
+                        <button
+                            onClick={handleSwitchToDrive}
+                            className="px-4 py-2 rounded-xl text-sm font-medium text-gray-600 dark:text-white/60 hover:text-gray-900 dark:hover:text-white bg-gray-100 dark:bg-white/8 hover:bg-gray-200 dark:hover:bg-white/15 transition-colors flex items-center gap-2 flex-shrink-0"
+                            title="Continue this session hands-free by voice"
+                        >
+                            <Car className="w-4 h-4" />
+                            <span className="hidden sm:inline">Switch to Drive Mode</span>
+                        </button>
+                    )}
                     {showGenerateButton && (
                         <button
                             onClick={handleGenerateSOP}
@@ -420,6 +517,44 @@ export default function OfficeMode() {
                 <div className="w-full lg:w-1/2 flex flex-col border-r border-gray-200 dark:border-white/5 bg-white dark:bg-[#09090b]">
                     <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-6">
                         <div className="max-w-2xl mx-auto space-y-6">
+                            {selectedSOPTemplate && !sopContent && !isComplete && !isRestoringSession && (
+                                <div className="rounded-2xl border-2 border-dashed border-[#137fec]/30 bg-[#137fec]/5 p-5 flex flex-col sm:flex-row sm:items-center gap-4">
+                                    <div className="flex-1">
+                                        <p className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                                            <span className="text-lg">{selectedSOPTemplate.icon}</span>
+                                            {selectedSOPTemplate.title}
+                                        </p>
+                                        <p className="text-xs text-gray-500 dark:text-white/50 mt-1">
+                                            {{
+                                                en: 'Load a best-practice template as your starting point, then amend it to fit your business — or just start typing below.',
+                                                es: 'Carga una plantilla de buenas prácticas como punto de partida y adáptala a tu negocio — o simplemente empieza a escribir abajo.',
+                                                nl: 'Laad een best-practice sjabloon als startpunt en pas het aan je bedrijf aan — of begin gewoon hieronder te typen.',
+                                                fr: 'Chargez un modèle de bonnes pratiques comme point de départ, puis adaptez-le à votre entreprise — ou commencez simplement à écrire ci-dessous.',
+                                                de: 'Lade eine Best-Practice-Vorlage als Ausgangspunkt und passe sie an dein Unternehmen an — oder schreibe einfach unten los.',
+                                                it: 'Carica un modello di best practice come punto di partenza e adattalo alla tua azienda — oppure inizia semplicemente a scrivere qui sotto.',
+                                                pt: 'Carregue um modelo de boas práticas como ponto de partida e adapte-o ao seu negócio — ou simplesmente comece a escrever abaixo.',
+                                                pl: 'Wczytaj szablon dobrych praktyk jako punkt wyjścia i dostosuj go do swojej firmy — albo po prostu zacznij pisać poniżej.',
+                                            }[selectedLanguage]}
+                                        </p>
+                                    </div>
+                                    <button
+                                        onClick={handleLoadTemplate}
+                                        className="px-5 py-2.5 rounded-xl bg-[#137fec] hover:bg-[#0f66bd] text-white text-sm font-bold shadow-lg shadow-[#137fec]/25 transition-all flex items-center justify-center gap-2 flex-shrink-0"
+                                    >
+                                        <Sparkles className="w-4 h-4 text-yellow-300" />
+                                        {{
+                                            en: 'Help me get started',
+                                            es: 'Ayúdame a empezar',
+                                            nl: 'Help me op weg',
+                                            fr: 'Aidez-moi à démarrer',
+                                            de: 'Hilf mir beim Einstieg',
+                                            it: 'Aiutami a iniziare',
+                                            pt: 'Ajude-me a começar',
+                                            pl: 'Pomóż mi zacząć',
+                                        }[selectedLanguage]}
+                                    </button>
+                                </div>
+                            )}
                             {interviewMessages.map((message, index) => (
                                 <div
                                     key={index}
@@ -598,6 +733,26 @@ export default function OfficeMode() {
                             <span className="text-sm font-bold text-gray-700 dark:text-white/70">Document Preview</span>
                         </div>
                         <div className="flex items-center gap-3">
+                            {sopContent && !pendingUpdate && !isComplete && (
+                                <button
+                                    onClick={handleEnhanceWithResearch}
+                                    disabled={isResearching}
+                                    className="text-xs font-bold text-[#137fec] hover:text-[#0f66bd] flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-[#137fec]/10 hover:bg-[#137fec]/20 transition-colors disabled:opacity-60"
+                                    title="Research industry best practices and propose an improved draft"
+                                >
+                                    {isResearching ? (
+                                        <>
+                                            <span className="w-3 h-3 border-2 border-[#137fec]/30 border-t-[#137fec] rounded-full animate-spin" />
+                                            {{ en: 'Researching…', es: 'Investigando…', nl: 'Onderzoeken…', fr: 'Recherche…', de: 'Recherchiere…', it: 'Ricerca in corso…', pt: 'Pesquisando…', pl: 'Badanie…' }[selectedLanguage]}
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Sparkles className="w-3.5 h-3.5" />
+                                            {{ en: 'Enhance with AI research', es: 'Mejorar con investigación IA', nl: 'Verbeteren met AI-onderzoek', fr: 'Améliorer avec la recherche IA', de: 'Mit KI-Recherche verbessern', it: 'Migliora con ricerca IA', pt: 'Aprimorar com pesquisa de IA', pl: 'Ulepsz dzięki badaniom AI' }[selectedLanguage]}
+                                        </>
+                                    )}
+                                </button>
+                            )}
                             {history.length > 0 && (
                                 <button
                                     onClick={handleRollback}
@@ -606,6 +761,18 @@ export default function OfficeMode() {
                                     <RotateCcw className="w-3.5 h-3.5" />
                                     Rollback
                                 </button>
+                            )}
+                            {autosaveStatus === 'saving' && (
+                                <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-amber-500/10 text-amber-500 text-[10px] font-bold uppercase tracking-wider">
+                                    <div className="w-1 h-1 bg-amber-500 rounded-full animate-pulse" />
+                                    {{ en: 'Saving…', es: 'Guardando…', nl: 'Opslaan…', fr: 'Enregistrement…', de: 'Speichern…', it: 'Salvataggio…', pt: 'Salvando…', pl: 'Zapisywanie…' }[selectedLanguage]}
+                                </div>
+                            )}
+                            {autosaveStatus === 'saved' && (
+                                <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-green-500/10 text-green-500 text-[10px] font-bold uppercase tracking-wider">
+                                    <Check className="w-3 h-3" />
+                                    {{ en: 'Saved', es: 'Guardado', nl: 'Opgeslagen', fr: 'Enregistré', de: 'Gespeichert', it: 'Salvato', pt: 'Salvo', pl: 'Zapisano' }[selectedLanguage]}
+                                </div>
                             )}
                             <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-green-500/10 text-green-500 text-[10px] font-bold uppercase tracking-wider">
                                 <div className="w-1 h-1 bg-green-500 rounded-full animate-pulse" />
@@ -616,27 +783,20 @@ export default function OfficeMode() {
 
                     <div className="flex-1 overflow-y-auto p-12 bg-white dark:bg-[#0c0c0e]">
                         <div className="max-w-[700px] mx-auto">
-                            {isResearching ? (
-                                <div className="flex flex-col items-center justify-center h-64 text-center">
-                                    <div className="w-12 h-12 border-4 border-[#137fec]/20 border-t-[#137fec] rounded-full animate-spin mb-4" />
-                                    <p className="text-sm font-medium text-gray-500 dark:text-white/40">Researched industry best practices...</p>
+                            <div className="relative">
+                                {/* Previewing Pending State */}
+                                <div className={`prose prose-blue dark:prose-invert max-w-none transition-all duration-500 ${pendingUpdate ? 'blur-sm opacity-30 select-none' : ''}`}>
+                                    <ReactMarkdown>{sopContent || '# New Standard Operating Procedure\n*Complete the interview to generate your first draft...*'}</ReactMarkdown>
                                 </div>
-                            ) : (
-                                <div className="relative">
-                                    {/* Previewing Pending State */}
-                                    <div className={`prose prose-blue dark:prose-invert max-w-none transition-all duration-500 ${pendingUpdate ? 'blur-sm opacity-30 select-none' : ''}`}>
-                                        <ReactMarkdown>{sopContent || '# New Standard Operating Procedure\n*Complete the interview to generate your first draft...*'}</ReactMarkdown>
-                                    </div>
 
-                                    {pendingUpdate && (
-                                        <div className="absolute inset-0 z-10 animate-in fade-in duration-500">
-                                            <div className="prose prose-blue dark:prose-invert max-w-none">
-                                                <ReactMarkdown>{pendingUpdate}</ReactMarkdown>
-                                            </div>
+                                {pendingUpdate && (
+                                    <div className="absolute inset-0 z-10 animate-in fade-in duration-500">
+                                        <div className="prose prose-blue dark:prose-invert max-w-none">
+                                            <ReactMarkdown>{pendingUpdate}</ReactMarkdown>
                                         </div>
-                                    )}
-                                </div>
-                            )}
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
                 </div>

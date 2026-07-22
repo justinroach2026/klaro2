@@ -3,8 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { useStore, messageText } from '../../store';
 import { voiceEngine } from '../../lib/voice';
 import { AIInterviewer } from '../../lib/ai/interviewer';
-import { Mic, Square, Play, RefreshCw, ArrowLeft } from 'lucide-react';
-import { supabase, createInterviewSession, saveInterviewTranscript, completeInterviewSession } from '../../lib/supabase';
+import { getStarterQuestions } from '../../lib/templates';
+import { Mic, Square, Play, RefreshCw, ArrowLeft, Briefcase } from 'lucide-react';
+import { supabase, createInterviewSession, saveInterviewTranscript, completeInterviewSession, loadInterviewSession, updateInterviewSessionMode } from '../../lib/supabase';
 
 type SessionStatus = 'idle' | 'speaking' | 'listening' | 'processing';
 
@@ -22,6 +23,8 @@ export default function DriveMode() {
         sessionId,
         setSessionId,
         interviewMessages,
+        selectedSOPTemplate,
+        setInterviewMode,
     } = useStore();
 
     const sessionIdRef = useRef<string | null>(sessionId);
@@ -37,7 +40,40 @@ export default function DriveMode() {
     const isSessionActive = useRef(false);
 
     useEffect(() => {
-        aiInterviewer.current = new AIInterviewer(selectedLanguage, selectedIndustry, selectedCountry, profile?.agentic_prompt);
+        const store = useStore.getState();
+        aiInterviewer.current = new AIInterviewer(
+            selectedLanguage,
+            selectedIndustry,
+            selectedCountry,
+            profile?.agentic_prompt,
+            getStarterQuestions(store.selectedSOPTemplate, selectedIndustry)
+        );
+
+        if (store.interviewMessages.length > 0) {
+            // In-app mode switch: replay the live conversation so context carries over
+            aiInterviewer.current.loadHistory(
+                store.interviewMessages.map(m => ({ role: m.role, content: messageText(m.content) }))
+            );
+        } else if (user) {
+            // Fresh mount (e.g. page refresh): resume the most recent in-progress session
+            const restore = async () => {
+                try {
+                    const existing = await loadInterviewSession(user.id);
+                    if (existing && existing.transcript?.length > 0) {
+                        existing.transcript.forEach((m) => addMessage({ role: m.role as 'user' | 'ai', content: m.content }));
+                        aiInterviewer.current?.loadHistory(existing.transcript);
+                        sessionIdRef.current = existing.id;
+                        setSessionId(existing.id);
+                        if (existing.mode !== 'drive') {
+                            await updateInterviewSessionMode(existing.id, 'drive');
+                        }
+                    }
+                } catch (err) {
+                    console.error('Failed to restore session:', err);
+                }
+            };
+            restore();
+        }
 
         if ('speechSynthesis' in window) {
             window.speechSynthesis.getVoices();
@@ -74,16 +110,44 @@ export default function DriveMode() {
         isSessionActive.current = true;
         setStatus('speaking');
 
-        const greeting = {
-            en: "Drive mode on. I'm listening. What process shall we document today?",
-            es: "Modo de conducción activado. Te escucho. ¿Qué proceso documentaremos hoy?",
-            nl: "Rijmodus aan. Ik luister. Welk proces zullen we vandaag documenteren?",
-            fr: "Mode conduite activé. Je vous écoute. Quel processus allons-nous documenter aujourd'hui?",
-            de: "Fahrmodus ein. Ich höre zu. Welchen Prozess sollen wir heute dokumentieren?",
-            it: "Modalità guida attiva. Ti ascolto. Quale processo documenteremo oggi?",
-            pt: "Modo de direção ativado. Estou ouvindo. Qual processo devemos documentar hoje?",
-            pl: "Tryb jazdy włączony. Słucham. Jaki proces dziś udokumentujemy?"
-        }[selectedLanguage] || "Drive mode on. What process shall we document?";
+        const hasHistory = useStore.getState().interviewMessages.length > 0;
+        const templateTitle = selectedSOPTemplate?.title;
+
+        // Pick the greeting: resuming a conversation, starting from a template
+        // (the AI then guides with the template's starter questions), or fresh
+        const greeting = (hasHistory
+            ? {
+                en: "Drive mode on. Let's continue where we left off — go ahead.",
+                es: "Modo de conducción activado. Continuemos donde lo dejamos: adelante.",
+                nl: "Rijmodus aan. Laten we verdergaan waar we gebleven waren — ga je gang.",
+                fr: "Mode conduite activé. Reprenons là où nous nous étions arrêtés — allez-y.",
+                de: "Fahrmodus ein. Machen wir dort weiter, wo wir aufgehört haben — leg los.",
+                it: "Modalità guida attiva. Continuiamo da dove eravamo rimasti — vai pure.",
+                pt: "Modo de direção ativado. Vamos continuar de onde paramos — pode falar.",
+                pl: "Tryb jazdy włączony. Kontynuujmy od miejsca, w którym skończyliśmy — śmiało."
+            }
+            : templateTitle
+                ? {
+                    en: `Drive mode on. We're documenting "${templateTitle}". I'll guide you with a few questions — first, tell me how this process starts in your business.`,
+                    es: `Modo de conducción activado. Vamos a documentar "${templateTitle}". Te guiaré con algunas preguntas: primero, cuéntame cómo empieza este proceso en tu negocio.`,
+                    nl: `Rijmodus aan. We documenteren "${templateTitle}". Ik begeleid je met een paar vragen — vertel me eerst hoe dit proces in jouw bedrijf begint.`,
+                    fr: `Mode conduite activé. Nous documentons « ${templateTitle} ». Je vais vous guider avec quelques questions — d'abord, dites-moi comment ce processus commence dans votre entreprise.`,
+                    de: `Fahrmodus ein. Wir dokumentieren „${templateTitle}". Ich führe dich mit ein paar Fragen — erzähl mir zuerst, wie dieser Prozess in deinem Unternehmen beginnt.`,
+                    it: `Modalità guida attiva. Stiamo documentando "${templateTitle}". Ti guiderò con alcune domande — prima, dimmi come inizia questo processo nella tua azienda.`,
+                    pt: `Modo de direção ativado. Vamos documentar "${templateTitle}". Vou orientá-lo com algumas perguntas — primeiro, conte-me como esse processo começa no seu negócio.`,
+                    pl: `Tryb jazdy włączony. Dokumentujemy „${templateTitle}". Poprowadzę Cię kilkoma pytaniami — najpierw powiedz mi, jak ten proces zaczyna się w Twojej firmie.`
+                }
+                : {
+                    en: "Drive mode on. I'm listening. What process shall we document today?",
+                    es: "Modo de conducción activado. Te escucho. ¿Qué proceso documentaremos hoy?",
+                    nl: "Rijmodus aan. Ik luister. Welk proces zullen we vandaag documenteren?",
+                    fr: "Mode conduite activé. Je vous écoute. Quel processus allons-nous documenter aujourd'hui?",
+                    de: "Fahrmodus ein. Ich höre zu. Welchen Prozess sollen wir heute dokumentieren?",
+                    it: "Modalità guida attiva. Ti ascolto. Quale processo documenteremo oggi?",
+                    pt: "Modo de direção ativado. Estou ouvindo. Qual processo devemos documentar hoje?",
+                    pl: "Tryb jazdy włączony. Słucham. Jaki proces dziś udokumentujemy?"
+                }
+        )[selectedLanguage] || "Drive mode on. What process shall we document?";
 
         setCurrentAIResponse(greeting);
         addMessage({ role: 'ai', content: greeting });
@@ -108,28 +172,53 @@ export default function DriveMode() {
             const firstUserMessage = (firstUserContent ? messageText(firstUserContent) : '') || 'Untitled SOP';
             const title = firstUserMessage.length > 50 ? firstUserMessage.substring(0, 50) + '...' : firstUserMessage;
 
-            const content = await aiInterviewer.current!.generateSOP(title);
+            // Prefer the live draft document (built in Office Mode) when it exists
+            const liveDraft = useStore.getState().sopContent;
+            const content = liveDraft || await aiInterviewer.current!.generateSOP(title);
             const metadata = await aiInterviewer.current!.extractMetadata(title);
 
-            const { error } = await supabase!
-                .from('sops')
-                .insert({
-                    team_id: team.id,
-                    title: title,
-                    content: content,
-                    language: selectedLanguage,
-                    tags: metadata.tags || [],
-                    version: 1,
-                    created_by: user.id
-                });
-
-            if (error) throw error;
+            // Publish the autosaved draft in place when one exists (e.g. after a
+            // switch from Office Mode), otherwise insert a new SOP
+            const currentDraftId = useStore.getState().draftSOPId;
+            if (currentDraftId) {
+                const { error } = await supabase!
+                    .from('sops')
+                    .update({
+                        title: title,
+                        content: content,
+                        tags: metadata.tags || [],
+                        status: 'published',
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', currentDraftId);
+                if (error) throw error;
+            } else {
+                const { error } = await supabase!
+                    .from('sops')
+                    .insert({
+                        team_id: team.id,
+                        title: title,
+                        content: content,
+                        language: selectedLanguage,
+                        tags: metadata.tags || [],
+                        version: 1,
+                        created_by: user.id,
+                        status: 'published'
+                    });
+                if (error) throw error;
+            }
 
             if (sessionIdRef.current) {
-                await completeInterviewSession(sessionIdRef.current);
+                await completeInterviewSession(sessionIdRef.current, currentDraftId ?? undefined);
                 sessionIdRef.current = null;
                 setSessionId(null);
             }
+            const store = useStore.getState();
+            store.setDraftSOPId(null);
+            store.setAutosaveStatus('idle');
+            store.setSelectedSOPTemplate(null);
+            store.setSopContent('');
+            store.setSopHistory([]);
 
             setIsComplete(true);
             setCurrentAIResponse("🎉 Your SOP has been generated! You can now return to the dashboard.");
@@ -148,6 +237,16 @@ export default function DriveMode() {
         voiceEngine.stopRecording();
         setIsRecording(false);
         setStatus('idle');
+    };
+
+    const handleSwitchToOffice = async () => {
+        handleStopSession();
+        try {
+            if (sessionIdRef.current) await updateInterviewSessionMode(sessionIdRef.current, 'office');
+        } catch (err) {
+            console.error('Failed to persist mode switch:', err);
+        }
+        setInterviewMode('office');
     };
 
     const startListeningLoop = async () => {
@@ -237,7 +336,18 @@ export default function DriveMode() {
                                 {status === 'idle' ? 'Hands-free voice documentation' : isComplete ? 'Success' : 'Tap Stop to end session'}
                             </p>
                         </div>
-                        <div className="w-16 flex-shrink-0" />
+                        {!isComplete ? (
+                            <button
+                                onClick={handleSwitchToOffice}
+                                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-gray-500 dark:text-white/50 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/8 transition-colors flex-shrink-0"
+                                title="Continue this session typing in Office Mode"
+                            >
+                                <Briefcase className="w-4 h-4" />
+                                <span className="text-sm font-medium hidden sm:inline">Office</span>
+                            </button>
+                        ) : (
+                            <div className="w-16 flex-shrink-0" />
+                        )}
                     </div>
                 </div>
             </div>

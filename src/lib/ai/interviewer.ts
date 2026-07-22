@@ -244,7 +244,8 @@ export class AIInterviewer {
         language: LanguageCode = 'en',
         industry: IndustryCode = 'other',
         country: CountryCode = 'gb',
-        agenticPrompt: string | null = null
+        agenticPrompt: string | null = null,
+        starterQuestions?: string[]
     ) {
         this.language = language;
         this.industry = industry;
@@ -253,16 +254,20 @@ export class AIInterviewer {
         const industryInfo = SUPPORTED_INDUSTRIES[industry];
         const countryInfo = SUPPORTED_COUNTRIES[country];
 
-        const industryContext = `\n\nINDUSTRY CONTEXT: The user works in the ${industryInfo.name} industry (${industryInfo.description}). 
-        REGIONAL CONTEXT: The user is located in ${countryInfo.name}. 
+        const industryContext = `\n\nINDUSTRY CONTEXT: The user works in the ${industryInfo.name} industry (${industryInfo.description}).
+        REGIONAL CONTEXT: The user is located in ${countryInfo.name}.
         Use your knowledge of ${countryInfo.name}'s specific laws and ${industryInfo.name} regulations to:
         1. Anticipate common steps in their processes.
         2. Proactively ask about industry-standard requirements (e.g., safety, compliance, quality control, data privacy laws in ${countryInfo.name}).
         3. Suggest best practices tailored to this sector in this region.`;
 
+        const starterQuestionsContext = starterQuestions?.length
+            ? `\n\nSTARTER QUESTIONS: Use these curated questions to guide the early part of the interview:\n${starterQuestions.map((q, i) => `${i + 1}. ${q}`).join('\n')}\nWork through them naturally, one at a time, in the conversation language — adapt them to the user's answers, skip any already covered, and never read them out as a checklist.`
+            : '';
+
         const systemContent = agenticPrompt
-            ? `${agenticPrompt}\n\n${industryContext}`
-            : `${SYSTEM_PROMPTS[language]}${industryContext}`;
+            ? `${agenticPrompt}\n\n${industryContext}${starterQuestionsContext}`
+            : `${SYSTEM_PROMPTS[language]}${industryContext}${starterQuestionsContext}`;
 
         this.conversationHistory = [
             { role: 'system', content: systemContent },

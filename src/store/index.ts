@@ -157,6 +157,8 @@ interface AppState {
     sopContent: string;
     pendingUpdate: string | null;
     sopHistory: string[];
+    draftSOPId: string | null;
+    autosaveStatus: 'idle' | 'saving' | 'saved';
 
     setTheme: (theme: 'light' | 'dark' | 'system') => void;
     setIsLoading: (loading: boolean) => void;
@@ -166,6 +168,8 @@ interface AppState {
     setSopContent: (content: string) => void;
     setPendingUpdate: (update: string | null) => void;
     setSopHistory: (history: string[] | ((prev: string[]) => string[])) => void;
+    setDraftSOPId: (id: string | null) => void;
+    setAutosaveStatus: (status: 'idle' | 'saving' | 'saved') => void;
 }
 
 export const useStore = create<AppState>((set) => ({
@@ -214,6 +218,8 @@ export const useStore = create<AppState>((set) => ({
     sopContent: '',
     pendingUpdate: null,
     sopHistory: [],
+    draftSOPId: null,
+    autosaveStatus: 'idle',
 
     setTheme: (theme) => {
         localStorage.setItem('klaro-theme', theme);
@@ -228,4 +234,6 @@ export const useStore = create<AppState>((set) => ({
     setSopHistory: (history) => set((state) => ({
         sopHistory: typeof history === 'function' ? history(state.sopHistory) : history
     })),
+    setDraftSOPId: (id) => set({ draftSOPId: id }),
+    setAutosaveStatus: (status) => set({ autosaveStatus: status }),
 }));

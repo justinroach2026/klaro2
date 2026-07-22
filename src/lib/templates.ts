@@ -6,6 +6,7 @@ export interface SOPTemplate {
    tags: string[];
    icon: string;
    content: string; // Pre-filled markdown SOP content
+   starterQuestions?: string[]; // Curated questions to open the interview (see getStarterQuestions)
 }
 
 const RE = (t: string, d: string, tags: string[], icon: string, content: string): SOPTemplate => ({ title: t, description: d, tags, icon, content });
@@ -1132,3 +1133,466 @@ Maintain accurate stock records through regular cycle counting, reconcile physic
       RE('Health & Safety Risk Assessment', 'Hazard identification and control measures.', ['safety', 'compliance'], '⛑️', `## Risk Assessment\n\n### 5-Step Process\n1. **Identify Hazards** — Walk the workplace, review incident reports\n2. **Identify Who's at Risk** — Staff, visitors, contractors, vulnerable persons\n3. **Evaluate the Risk** — Likelihood × Severity = Risk Rating\n4. **Record Control Measures** — What you're doing to reduce risk\n5. **Review** — Annually or after any incident/change\n\n### Risk Matrix\n| | Low Severity | Medium | High |\n|---|---|---|---|\n| **Likely** | Medium | High | Critical |\n| **Possible** | Low | Medium | High |\n| **Unlikely** | Low | Low | Medium |\n\n### Control Hierarchy (ERIC-PD)\n1. **E**liminate the hazard\n2. **R**educe the risk\n3. **I**solate people from the hazard\n4. **C**ontrol with safe systems of work\n5. **P**PE as last resort\n6. **D**iscipline — enforce the rules`),
    ],
 };
+
+// ---------------------------------------------------------------------------
+// Starter questions — curated openers the AI interviewer works through to help
+// the user get going. Keyed by template title; industry fallbacks below cover
+// custom (no-template) processes.
+// ---------------------------------------------------------------------------
+
+const TEMPLATE_STARTER_QUESTIONS: Record<string, string[]> = {
+   // --- Tech ---
+   'Software Deployment Process': [
+      'How does code currently get from a developer\'s machine to production — what tools and environments are involved?',
+      'Who has to approve a release before it goes live, and how do they sign off?',
+      'What happens today when a deployment goes wrong — is there a rollback procedure?',
+      'How often do you deploy, and are there any windows when deployments are not allowed?',
+   ],
+   'Incident Response Plan': [
+      'How do you currently find out that something is broken — monitoring alerts, customer reports, or both?',
+      'Who gets called first when there is an outage, and how do you reach them out of hours?',
+      'How do you decide how serious an incident is, and does that change who gets involved?',
+      'What do you do after an incident is resolved — is there a review or write-up?',
+   ],
+   'New Employee Onboarding': [
+      'Walk me through a new hire\'s first day — what needs to be ready before they arrive?',
+      'What accounts, tools, and access does a new team member need, and who sets those up?',
+      'Who is responsible for training the new person, and how long does ramp-up usually take?',
+      'What do new hires most often get stuck on in their first month?',
+   ],
+   'Code Review Guidelines': [
+      'What does a developer do when their code is ready for review — where do reviews happen?',
+      'Who is allowed to approve changes, and how many approvals do you require?',
+      'What are the most common problems reviewers catch — and what should always block a merge?',
+      'How quickly do you expect reviews to be done, and what happens when they pile up?',
+   ],
+   'Data Backup & Recovery': [
+      'What data would hurt most if you lost it, and where does it live today?',
+      'How are backups currently made — automatically or manually, and how often?',
+      'Have you ever had to restore from a backup? How did that go?',
+      'How quickly would you need to be back up and running after a data loss?',
+   ],
+   'Client Data Handling (GDPR)': [
+      'What personal data do you collect from clients, and where is it stored?',
+      'Who in the team can access client data, and is that access ever reviewed?',
+      'What would you do today if a client asked you to delete everything you hold on them?',
+      'Have you defined how long you keep client data before deleting it?',
+   ],
+
+   // --- Real estate ---
+   'Property Listing Process': [
+      'Walk me through what happens from the moment an owner says "sell my property" to the listing going live.',
+      'What information and documents do you collect from the owner before listing?',
+      'Who takes the photos and writes the description, and where does the listing get published?',
+      'What legal checks or paperwork must be complete before you can advertise a property?',
+   ],
+   'Tenant Screening & Onboarding': [
+      'What checks do you run on a prospective tenant before offering a contract?',
+      'What documents does a tenant need to provide, and who verifies them?',
+      'How do you handle the deposit — where is it held and how is that documented?',
+      'What happens on move-in day — inventory, keys, meter readings?',
+   ],
+   'Property Viewing Protocol': [
+      'How do viewings get booked, and who confirms them with the owner or current tenant?',
+      'What does the agent prepare before a viewing — keys, access, property details?',
+      'What safety rules do you have for agents showing properties alone?',
+      'How do you follow up with the prospect and the owner after a viewing?',
+   ],
+   'Rent Collection & Arrears': [
+      'How is rent collected today, and on what day is it due?',
+      'How quickly do you notice a missed payment, and what is the first thing you do?',
+      'What are the escalation steps when a tenant falls further behind?',
+      'At what point do you involve lawyers or start formal proceedings?',
+   ],
+   'Property Maintenance Request': [
+      'How do tenants report a problem today — phone, email, an app?',
+      'How do you decide whether something is an emergency or can wait?',
+      'Which contractors do you use, and who approves the cost of a repair?',
+      'How do you confirm the work was done properly and close the request?',
+   ],
+   'Compliance Checks (EPC, Gas, EICR)': [
+      'Which safety and energy certificates do your properties need in your market?',
+      'How do you currently track when each certificate expires?',
+      'Who books the inspections and holds the relationship with the engineers?',
+      'What do you do when a property fails an inspection?',
+   ],
+
+   // --- Healthcare ---
+   'Patient Intake Process': [
+      'What happens from the moment a new patient contacts you to their first appointment?',
+      'What information and consents must be collected before a patient can be seen?',
+      'How do you verify insurance or payment details, and who does that?',
+      'What system do you record patient details in, and who has access?',
+   ],
+   'Medication Administration': [
+      'Who is authorised to administer medication in your setting?',
+      'How do you verify the right patient gets the right medication and dose?',
+      'How are administrations recorded, and what happens if a dose is missed?',
+      'What is the procedure when a medication error occurs?',
+   ],
+   'Infection Control Protocol': [
+      'What are the highest infection risks in your setting day to day?',
+      'What hygiene routines do staff follow between patients?',
+      'How do you handle a suspected infectious patient — isolation, reporting, cleaning?',
+      'How is compliance checked, and who is your infection control lead?',
+   ],
+   'Medical Records Management': [
+      'Where are patient records kept, and are any still on paper?',
+      'Who can view or edit a record, and how are changes tracked?',
+      'How do you handle a patient requesting a copy of their records?',
+      'How long do you retain records, and how are old ones destroyed?',
+   ],
+   'Emergency Response Plan': [
+      'What kinds of emergencies are most likely in your practice or facility?',
+      'Who takes charge in an emergency, and how are roles assigned?',
+      'Where is emergency equipment kept, and who checks it?',
+      'How do staff practise — do you run drills?',
+   ],
+   'Staff Credentialling & Training': [
+      'What licences or registrations must each clinical role hold?',
+      'How do you check credentials when hiring, and how do you track expiry dates?',
+      'What mandatory training must staff refresh, and how often?',
+      'What happens if someone\'s credential lapses?',
+   ],
+
+   // --- Hospitality ---
+   'Guest Check-In / Check-Out': [
+      'Walk me through what happens when a guest arrives at your front desk.',
+      'What details do you verify at check-in, and what do you hand the guest?',
+      'How does check-out work — payment, key return, feedback?',
+      'How do you handle early arrivals, late check-outs, and no-shows?',
+   ],
+   'Housekeeping Standards': [
+      'What does a full room clean include, step by step?',
+      'How do housekeepers know which rooms to clean and in what order?',
+      'Who inspects rooms after cleaning, and against what checklist?',
+      'How do you handle lost property found in rooms?',
+   ],
+   'Food Safety & Hygiene (HACCP)': [
+      'What food do you prepare on site, and what are the riskiest steps?',
+      'How do you monitor fridge and cooking temperatures, and where is that logged?',
+      'How do you prevent cross-contamination, especially for allergens?',
+      'What checks happen when deliveries arrive from suppliers?',
+   ],
+   'Guest Complaint Resolution': [
+      'What do guests complain about most often?',
+      'What is front-line staff allowed to offer a guest to fix a problem, without asking a manager?',
+      'When must a complaint be escalated, and to whom?',
+      'How do you record complaints and spot repeat problems?',
+   ],
+   'Event Setup & Breakdown': [
+      'What types of events do you host, and what does a typical setup involve?',
+      'How far in advance is the event plan confirmed, and who owns it?',
+      'Who is on the setup team, and how do they know the layout?',
+      'What has to happen after the event before the space is back to normal?',
+   ],
+   'Fire Safety & Evacuation': [
+      'What fire detection and fighting equipment do you have, and who checks it?',
+      'Who are your fire marshals, and what are their duties in an evacuation?',
+      'How do you account for guests during an evacuation, including those needing assistance?',
+      'When did you last run a fire drill, and what did you learn?',
+   ],
+
+   // --- Manufacturing ---
+   'Production Line Setup': [
+      'Walk me through starting a production line at the beginning of a shift.',
+      'What settings, tooling, or materials change between different products?',
+      'What checks confirm the line is producing good parts before a full run?',
+      'What are the most common setup mistakes, and what do they cost you?',
+   ],
+   'Quality Inspection (QC)': [
+      'At what points in production do you inspect — incoming, in-process, final?',
+      'What do inspectors measure or look for, and with what equipment?',
+      'What happens to a part or batch that fails inspection?',
+      'How are inspection results recorded and reported?',
+   ],
+   'Equipment Maintenance Schedule': [
+      'Which machines are most critical — the ones that stop everything when they fail?',
+      'What maintenance is done on a schedule versus only when something breaks?',
+      'Who performs maintenance, and how is it logged?',
+      'How do operators report a machine that seems off before it fails?',
+   ],
+   'Warehouse Receiving & Shipping': [
+      'What happens when a delivery arrives — who checks it and against what?',
+      'How is stock put away and located later?',
+      'Walk me through picking and packing an outbound order.',
+      'How do you handle damaged goods or quantity mismatches?',
+   ],
+   'Health & Safety Induction': [
+      'What are the biggest hazards a new worker faces in your facility?',
+      'What must a new worker complete before they can work unsupervised?',
+      'What PPE is required in each area, and who provides it?',
+      'How do workers report hazards or near-misses?',
+   ],
+   'Inventory Stock Take': [
+      'How often do you count stock, and is it everything at once or cycle counts?',
+      'Who counts, and how do you make sure counts are accurate?',
+      'What do you do when the count doesn\'t match the system?',
+      'Does production or shipping stop during a count?',
+   ],
+
+   // --- Professional services ---
+   'Client Onboarding': [
+      'What happens between a client saying "yes" and work actually starting?',
+      'What checks must you run on a new client before engaging — conflicts, identity, anti-money-laundering?',
+      'What goes into your engagement letter, and who approves it?',
+      'How is the team introduced to the client and the work kicked off?',
+   ],
+   'Billing & Invoicing': [
+      'How is billable work tracked today, and by whom?',
+      'Who reviews and approves an invoice before it goes to the client?',
+      'What are your payment terms, and how do you chase late payers?',
+      'How do you handle disputes over an invoice?',
+   ],
+   'Document Review & Approval': [
+      'What kinds of documents need formal review before they leave the firm?',
+      'Who reviews what — is there a hierarchy of sign-offs?',
+      'How do you track versions and make sure the right one is sent?',
+      'Where are final documents stored, and who can access them?',
+   ],
+   'Conflict of Interest Check': [
+      'When do you run conflict checks — every new client, every new matter?',
+      'What do you actually search, and who runs the search?',
+      'What happens when a potential conflict is found?',
+      'How are check results recorded and for how long?',
+   ],
+   'Staff Performance Review': [
+      'How often do formal reviews happen, and who conducts them?',
+      'What is discussed — objectives, feedback, development, pay?',
+      'How do you gather input from colleagues and clients?',
+      'What happens after the review — how are agreed actions followed up?',
+   ],
+   'Data Retention & Destruction': [
+      'What types of records do you hold, and are there legal minimum retention periods in your field?',
+      'How do you find files that are due for destruction?',
+      'Who must approve destroying a file?',
+      'How are paper and digital files actually destroyed, and is that certified?',
+   ],
+
+   // --- Education ---
+   'Student Enrolment': [
+      'How do prospective students apply, and what happens to an application first?',
+      'What entry requirements or documents do you verify?',
+      'How does an applicant become an enrolled student — offer, acceptance, payment?',
+      'What information does a new student receive before their first day?',
+   ],
+   'Lesson Planning Framework': [
+      'How do teachers plan lessons today — is there a shared template?',
+      'How do lessons link back to the curriculum or scheme of work?',
+      'How do you plan for students who need extra support or extra challenge?',
+      'How is learning checked during and after a lesson?',
+   ],
+   'Safeguarding & Child Protection': [
+      'Who is your Designated Safeguarding Lead, and does every member of staff know?',
+      'What must a staff member do the moment a child discloses something concerning?',
+      'What vetting do staff and volunteers go through before starting?',
+      'How and where are safeguarding concerns recorded?',
+   ],
+   'Exam Administration': [
+      'What exams do you run, and who oversees them?',
+      'How do you arrange extra time or adjustments for students who need them?',
+      'How are exam papers kept secure before and after the exam?',
+      'What happens if there is an incident during an exam — illness, suspected cheating?',
+   ],
+   'Parent Communication Protocol': [
+      'What channels do you use to communicate with parents, and for what?',
+      'How quickly do you commit to responding to a parent\'s concern?',
+      'How are parent-teacher meetings scheduled and documented?',
+      'How do you handle a parent complaint that isn\'t resolved by the teacher?',
+   ],
+   'IT Equipment Loan Process': [
+      'What devices do you lend out, and to whom?',
+      'What does a borrower agree to before receiving a device?',
+      'How do you track who has what, and when it is due back?',
+      'What happens when a device comes back damaged — or doesn\'t come back?',
+   ],
+
+   // --- Retail ---
+   'Point of Sale (POS) Operations': [
+      'Walk me through opening a till at the start of the day.',
+      'What payment methods do you accept, and what goes wrong most often at the till?',
+      'How does end-of-day cashing up work, and who checks it?',
+      'What does a cashier do when the till doesn\'t balance?',
+   ],
+   'Stock Replenishment': [
+      'How do you know when to reorder a product — system alerts or someone noticing?',
+      'Who places orders with suppliers, and who approves them?',
+      'What happens when a delivery arrives — checking, booking in, shelving?',
+      'How do you rotate stock and handle products close to expiry?',
+   ],
+   'Customer Returns & Exchanges': [
+      'What is your returns policy — time limit, receipt required, condition?',
+      'What can shop-floor staff decide themselves, and when must a manager step in?',
+      'How is a refund actually processed at the till?',
+      'What happens to returned items — back on the shelf, repaired, written off?',
+   ],
+   'Visual Merchandising Standards': [
+      'Who decides how displays look — head office plans or store discretion?',
+      'How often do window and in-store displays change?',
+      'What rules do you have about pricing, signage, and product placement?',
+      'How is a completed display checked or approved?',
+   ],
+   'Loss Prevention & Security': [
+      'Where do you lose most stock today — theft, damage, admin errors?',
+      'What should a staff member do if they suspect someone is stealing?',
+      'What security measures do you have — tags, CCTV, locked cabinets?',
+      'How are incidents recorded and reported?',
+   ],
+   'Online Order Fulfilment': [
+      'Where do online orders come in, and who picks them up?',
+      'Walk me through picking, packing, and dispatching an order.',
+      'How does click-and-collect work in your store?',
+      'What happens with an order you can\'t fulfil — out of stock, address problems?',
+   ],
+
+   // --- Construction ---
+   'Site Induction & Safety Briefing': [
+      'What must a new worker or visitor complete before setting foot on site?',
+      'What does your induction cover, and who delivers it?',
+      'What cards, tickets, or qualifications do you verify?',
+      'How do you record who has been inducted on each site?',
+   ],
+   'Permit to Work System': [
+      'Which activities on your sites require a permit before work starts?',
+      'Who issues permits, and what do they check first?',
+      'How long is a permit valid, and what closes it out?',
+      'What happens if work is found happening without a permit?',
+   ],
+   'Material Procurement & Delivery': [
+      'Who decides what materials to order, and who approves the spend?',
+      'How do you choose suppliers — approved list, quotes, relationships?',
+      'What happens when a delivery arrives on site?',
+      'How do you handle wrong, damaged, or late deliveries?',
+   ],
+   'Daily Site Inspection': [
+      'Who walks the site each day, and when?',
+      'What do they check — safety, progress, quality, security?',
+      'How are issues found on the walk recorded and assigned?',
+      'How do you track that raised issues actually get fixed?',
+   ],
+   'Project Handover & Close-Out': [
+      'What must be finished and signed off before you hand a project to the client?',
+      'How do you manage the snag list — who inspects, who fixes, who re-checks?',
+      'What documents and certificates go to the client at handover?',
+      'How do you handle defects the client reports after handover?',
+   ],
+   'Accident & Near-Miss Reporting': [
+      'What should a worker do in the first minutes after an accident on site?',
+      'How are accidents and near-misses reported, and on what form or system?',
+      'Which incidents must be reported to the authorities in your country?',
+      'How do you investigate what went wrong and stop it happening again?',
+   ],
+
+   // --- Other / general ---
+   'Employee Onboarding': [
+      'Walk me through a new employee\'s first day — what needs to be ready before they arrive?',
+      'What paperwork, accounts, and equipment does a new starter need, and who arranges them?',
+      'Who trains the new person, and what must they learn in the first week?',
+      'How do you check in on how a new starter is settling in?',
+   ],
+   'Customer Complaint Handling': [
+      'How do complaints reach you today — phone, email, in person, reviews?',
+      'Who logs a complaint, and where is it recorded?',
+      'What can front-line staff resolve themselves, and what must be escalated?',
+      'How do you make sure the customer hears back, and how fast?',
+   ],
+   'Purchase Requisition': [
+      'How does someone in your company request something to be bought?',
+      'Who can approve purchases, and are there spending limits per role?',
+      'How do you choose suppliers and confirm prices?',
+      'How is the invoice matched to what was ordered and received?',
+   ],
+   'Office Opening & Closing': [
+      'Who opens the office, and what do they do first?',
+      'What security steps happen at closing — alarms, locks, equipment?',
+      'What should the opener do if something looks wrong on arrival?',
+      'Who holds keys and alarm codes, and how is that tracked?',
+   ],
+   'Data Backup Procedure': [
+      'What data would hurt most if you lost it, and where does it live today?',
+      'How are backups made now — automatically or manually, and how often?',
+      'Has anyone ever tested restoring from a backup?',
+      'How quickly would the business need to be running again after a data loss?',
+   ],
+   'Health & Safety Risk Assessment': [
+      'What are the main hazards in your workplace day to day?',
+      'Who could be harmed — staff, visitors, contractors, the public?',
+      'What are you already doing to control those risks?',
+      'When were your risk assessments last reviewed, and who owns them?',
+   ],
+};
+
+export const INDUSTRY_STARTER_QUESTIONS: Record<IndustryCode, string[]> = {
+   tech: [
+      'What process would you like to document, and what triggers it — a request, an alert, a schedule?',
+      'Which tools and systems are involved at each step?',
+      'Who is responsible for each part, and where do handoffs happen?',
+      'What goes wrong most often, and how do you recover?',
+   ],
+   healthcare: [
+      'What process would you like to document, and who is involved — clinical staff, admin, patients?',
+      'What must happen in what order, and which steps are safety-critical?',
+      'What records or consents must be completed along the way?',
+      'What regulations or clinical standards does this process have to meet?',
+   ],
+   hospitality: [
+      'What process would you like to document, and where does it happen — front of house, kitchen, housekeeping?',
+      'Walk me through it from the guest\'s perspective — what do they experience?',
+      'Who on the team does each step, and during which shifts?',
+      'What do you do when things go wrong — a complaint, a shortage, a no-show?',
+   ],
+   manufacturing: [
+      'What process would you like to document, and where does it sit in production?',
+      'What materials, machines, and settings are involved?',
+      'What quality checks happen, and what do you do with failures?',
+      'What are the safety requirements for anyone doing this work?',
+   ],
+   professional: [
+      'What process would you like to document, and what triggers it — a new client, a deadline, a request?',
+      'Who does each step, and who must review or approve?',
+      'What documents are produced, and where are they stored?',
+      'What compliance or regulatory rules shape how this must be done?',
+   ],
+   education: [
+      'What process would you like to document, and who does it involve — students, staff, parents?',
+      'When does it happen — daily, termly, at enrolment?',
+      'What records must be kept, and who maintains them?',
+      'Are there safeguarding or regulatory requirements to respect?',
+   ],
+   retail: [
+      'What process would you like to document, and where does it happen — shop floor, stockroom, online?',
+      'Walk me through it step by step as it happens on a normal day.',
+      'Who is responsible for each part, and what can they decide themselves?',
+      'What goes wrong most often, and how should staff handle it?',
+   ],
+   construction: [
+      'What process would you like to document, and at what stage of a project does it happen?',
+      'Who is involved — your own team, subcontractors, the client?',
+      'What safety requirements and permits apply?',
+      'What paperwork or records does it produce?',
+   ],
+   real_estate: [
+      'What process would you like to document, and what triggers it — a new instruction, a tenant issue, a viewing?',
+      'Walk me through it from start to finish as it works today.',
+      'What documents and legal requirements are involved in your market?',
+      'Who does each step, and where do delays usually happen?',
+   ],
+   other: [
+      'What process would you like to document, and what makes it start?',
+      'Walk me through it step by step as it works today.',
+      'Who is responsible for each step, and what tools do they use?',
+      'What goes wrong most often, and what should happen when it does?',
+   ],
+};
+
+/**
+ * Resolve the starter questions for an interview: the template's curated set
+ * when one is selected, otherwise the industry-level fallback.
+ */
+export const getStarterQuestions = (
+   template: SOPTemplate | null,
+   industry: IndustryCode
+): string[] =>
+   (template && (template.starterQuestions ?? TEMPLATE_STARTER_QUESTIONS[template.title])) ||
+   INDUSTRY_STARTER_QUESTIONS[industry] ||
+   INDUSTRY_STARTER_QUESTIONS.other;

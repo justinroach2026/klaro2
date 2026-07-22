@@ -410,16 +410,15 @@ export const getInProgressSessions = async (userId: string): Promise<{
     return (data as any) || [];
 };
 
-// Load the most recent in-progress session for this user+mode combination
+// Load the most recent in-progress session for this user (mode-agnostic: a
+// session started in one mode can be resumed in the other)
 export const loadInterviewSession = async (
     userId: string,
-    mode: 'drive' | 'office',
-): Promise<{ id: string; transcript: { role: string; content: string; timestamp: number }[] } | null> => {
+): Promise<{ id: string; mode: 'drive' | 'office'; sop_id: string | null; transcript: { role: string; content: string; timestamp: number }[] } | null> => {
     const { data, error } = await supabase
         ?.from('interview_sessions')
-        .select('id, transcript')
+        .select('id, mode, sop_id, transcript')
         .eq('user_id', userId)
-        .eq('mode', mode)
         .eq('status', 'in_progress')
         .order('created_at', { ascending: false })
         .limit(1)
@@ -427,6 +426,19 @@ export const loadInterviewSession = async (
         || { data: null, error: new Error('Supabase not initialized') };
     if (error) throw error;
     return data as any;
+};
+
+// Switch an in-progress session between drive and office mode
+export const updateInterviewSessionMode = async (
+    sessionId: string,
+    mode: 'drive' | 'office',
+): Promise<void> => {
+    const { error } = await supabase
+        ?.from('interview_sessions')
+        .update({ mode })
+        .eq('id', sessionId)
+        || { error: new Error('Supabase not initialized') };
+    if (error) throw error;
 };
 
 // ─── Draft SOP Helpers ──────────────────────────────────────────────────────
@@ -458,6 +470,61 @@ export const createDraftSOP = async (params: {
         || { data: null, error: new Error('Supabase not initialized') };
     if (error) throw error;
     return data!.id;
+};
+
+// Autosave the live SOP draft: create the draft row on first save, update it
+// afterwards, and link it to the interview session. Returns the draft id.
+export const saveDraftSOP = async (params: {
+    draftId: string | null;
+    teamId: string;
+    userId: string;
+    title: string;
+    content: string;
+    tags: string[];
+    language: string;
+    sessionId?: string | null;
+}): Promise<string> => {
+    let draftId = params.draftId;
+
+    if (!draftId) {
+        draftId = await createDraftSOP({
+            teamId: params.teamId,
+            userId: params.userId,
+            title: params.title,
+            content: params.content,
+            tags: params.tags,
+            language: params.language,
+        });
+    } else {
+        const { error } = await supabase
+            ?.from('sops')
+            .update({ content: params.content, updated_at: new Date().toISOString() })
+            .eq('id', draftId)
+            || { error: new Error('Supabase not initialized') };
+        if (error) throw error;
+    }
+
+    // Link the draft to the session so resume can restore the document
+    if (params.sessionId) {
+        await supabase
+            ?.from('interview_sessions')
+            .update({ sop_id: draftId })
+            .eq('id', params.sessionId);
+    }
+
+    return draftId;
+};
+
+// Fetch a single SOP's content (used to restore the live draft on resume)
+export const getSOPContent = async (sopId: string): Promise<{ id: string; title: string; content: string; status: string } | null> => {
+    const { data, error } = await supabase
+        ?.from('sops')
+        .select('id, title, content, status')
+        .eq('id', sopId)
+        .maybeSingle()
+        || { data: null, error: new Error('Supabase not initialized') };
+    if (error) throw error;
+    return data as { id: string; title: string; content: string; status: string } | null;
 };
 
 // Fetch all draft SOPs for a team (for the "In Progress" dashboard section)
