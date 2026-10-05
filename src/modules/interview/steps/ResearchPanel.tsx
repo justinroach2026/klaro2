@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useStore, SUPPORTED_INDUSTRIES, SUPPORTED_COUNTRIES } from '../../../store';
+import { aiFetch } from '../../../lib/ai/client';
 import { Search, ShieldAlert, CheckCircle2, RefreshCw, ArrowRight, Gavel, FileWarning } from 'lucide-react';
 
 interface ResearchPanelProps {
@@ -20,11 +21,7 @@ export default function ResearchPanel({ onContinue, onBack }: ResearchPanelProps
                 const industry = SUPPORTED_INDUSTRIES[selectedIndustry].name;
                 const country = SUPPORTED_COUNTRIES[selectedCountry].name;
 
-                const res = await fetch('/api/ai/chat', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        model: "gpt-4o",
+                const res = await aiFetch('chat', {
                         messages: [
                             {
                                 role: "system",
@@ -38,7 +35,6 @@ export default function ResearchPanel({ onContinue, onBack }: ResearchPanelProps
                             },
                         ],
                         response_format: { type: "json_object" }
-                    })
                 });
 
                 if (!res.ok) throw new Error('Proxy error');

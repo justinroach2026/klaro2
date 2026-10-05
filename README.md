@@ -1,73 +1,34 @@
-# React + TypeScript + Vite
+# Klaro
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Voice-first, multilingual SOP documentation. An AI interviewer (voice or chat) turns what you say into a structured Standard Operating Procedure.
 
-Currently, two official plugins are available:
+**Stack:** React 19, TypeScript, Vite, Tailwind 4, Zustand, Supabase (auth + Postgres + RLS), Gemini (AI), Vercel (hosting + serverless functions).
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## Architecture
 
-## React Compiler
+- `src/` — the SPA. Interview flow in `src/modules/interview`, SOP viewer/editor in `src/modules/sop`, templates in `src/lib/templates.ts`.
+- `api/ai/[action].ts` — the Vercel function behind `/api/ai/{chat,search,fetch-url,transcribe,speak}`. All Gemini calls happen here so the key never reaches the browser. Every request must carry a valid Supabase session token.
+- `api/_lib/` — shared handlers (Gemini wrapper, auth check, SSRF-safe URL fetcher).
+- `server/ai-proxy.ts` — dev-only Vite middleware that serves `/api/ai/*` with the same handlers, so `npm run dev` needs no extra tooling.
+- `supabase/migrations/` — schema and RLS policies.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Environment variables
 
-## Expanding the ESLint configuration
+Copy `.env.example` to `.env`. Server-only variables must **not** have a `VITE_` prefix.
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+| Variable | Where | Purpose |
+| --- | --- | --- |
+| `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` | client + server | Supabase project; the server also uses them to verify user tokens |
+| `GEMINI_API_KEY` | server only | Google AI Studio key |
+| `GEMINI_MODEL`, `GEMINI_TTS_MODEL` | server only, optional | Override the defaults in `api/_lib/gemini.ts` |
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+## Development
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Deploy (Vercel)
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+Import the repo, set the variables above in the project settings, and deploy. `vercel.json` rewrites all non-`/api` routes to `index.html` so deep links work.
