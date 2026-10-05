@@ -35,7 +35,11 @@ interface GeminiResponse {
 }
 
 const chatModel = () => process.env.GEMINI_MODEL || 'gemini-3.8-flash';
-const ttsModel = () => process.env.GEMINI_TTS_MODEL || 'gemini-3.8-flash-tts';
+// The lite voice is ~1 s faster per spoken reply, which matters more than studio fidelity in hands-free mode.
+const ttsModel = () => process.env.GEMINI_TTS_MODEL || 'gemini-3.8-flash-lite-tts';
+
+// Gemini defaults to medium thinking, which roughly doubles latency on conversational turns.
+const interactiveThinking = () => ({ thinkingConfig: { thinkingLevel: process.env.GEMINI_THINKING_LEVEL || 'low' } });
 
 async function generate(model: string, body: Record<string, unknown>): Promise<GeminiResponse> {
     const apiKey = process.env.GEMINI_API_KEY;
@@ -103,6 +107,7 @@ export async function chat(opts: {
         ...toGeminiRequest(opts.messages),
         generationConfig: {
             temperature: opts.temperature ?? 0.7,
+            ...interactiveThinking(),
             ...(opts.response_format?.type === 'json_object' && { responseMimeType: 'application/json' }),
         },
     });
@@ -123,7 +128,7 @@ Research the following for my SOP: ${query}`;
     const data = await generate(chatModel(), {
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
         tools: [{ googleSearch: {} }],
-        generationConfig: { temperature: 0.4 },
+        generationConfig: { temperature: 0.4, ...interactiveThinking() },
     });
     return asChatResponse(textOf(data));
 }
@@ -138,7 +143,7 @@ export async function transcribe(audioBase64: string, mimeType: string, language
                 { inlineData: { mimeType, data: audioBase64 } },
             ],
         }],
-        generationConfig: { temperature: 0 },
+        generationConfig: { temperature: 0, ...interactiveThinking() },
     });
     return textOf(data).trim();
 }
