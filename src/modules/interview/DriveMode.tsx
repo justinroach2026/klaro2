@@ -9,6 +9,17 @@ import { supabase, createInterviewSession, saveInterviewTranscript, completeInte
 
 type SessionStatus = 'idle' | 'speaking' | 'listening' | 'processing';
 
+// Compared against the lowercased reply, so every phrase here must be lowercase.
+const READINESS_PHRASES = [
+    'ready to generate',
+    'all the information i need',
+    'generate the sop',
+    'generate sop',
+];
+
+// Don't rely on the AI's wording: once the user has answered this many times the button is always offered.
+const MIN_USER_TURNS_TO_GENERATE = 2;
+
 export default function DriveMode() {
     const navigate = useNavigate();
     const {
@@ -35,6 +46,10 @@ export default function DriveMode() {
     const [showGenerateButton, setShowGenerateButton] = useState(false);
     const [isGenerating, setIsGenerating] = useState(false);
     const [isComplete, setIsComplete] = useState(false);
+
+    const userTurns = interviewMessages.filter(m => m.role === 'user').length;
+    const hasHistory = interviewMessages.length > 0;
+    const canGenerate = !isComplete && (showGenerateButton || userTurns >= MIN_USER_TURNS_TO_GENERATE);
 
     const aiInterviewer = useRef<AIInterviewer | null>(null);
     const isSessionActive = useRef(false);
@@ -291,8 +306,7 @@ export default function DriveMode() {
 
             setStatus('speaking');
 
-            const readinessPhrases = ["ready to generate", "all the information I need", "generate the SOP now"];
-            if (readinessPhrases.some(p => response.toLowerCase().includes(p))) {
+            if (READINESS_PHRASES.some(p => response.toLowerCase().includes(p))) {
                 setShowGenerateButton(true);
             }
 
@@ -333,7 +347,7 @@ export default function DriveMode() {
                                 {status === 'idle' ? 'Drive Mode' : isComplete ? 'SOP Generated' : 'Session Active'}
                             </h2>
                             <p className="text-sm text-gray-500 dark:text-white/40 mt-0.5">
-                                {status === 'idle' ? 'Hands-free voice documentation' : isComplete ? 'Success' : 'Tap Stop to end session'}
+                                {status === 'idle' ? 'Hands-free voice documentation' : isComplete ? 'Success' : 'Tap Stop to pause'}
                             </p>
                         </div>
                         {!isComplete ? (
@@ -352,24 +366,33 @@ export default function DriveMode() {
                 </div>
             </div>
 
-            {showGenerateButton && !isComplete && (
-                <div className="fixed top-24 left-0 right-0 z-20 flex justify-center animate-bounce">
+            {canGenerate && (
+                <div className={`fixed top-24 left-0 right-0 z-20 flex justify-center ${showGenerateButton ? 'animate-bounce' : ''}`}>
                     <button
                         onClick={handleGenerateSOP}
                         disabled={isGenerating}
-                        className="px-8 py-4 rounded-2xl bg-[#137fec] hover:bg-[#0f66bd] text-white text-lg font-black shadow-2xl shadow-[#137fec]/40 transition-all disabled:opacity-50"
+                        className={showGenerateButton
+                            ? 'px-8 py-4 rounded-2xl bg-[#137fec] hover:bg-[#0f66bd] text-white text-lg font-black shadow-2xl shadow-[#137fec]/40 transition-all disabled:opacity-50'
+                            : 'px-5 py-2.5 rounded-xl bg-white/90 hover:bg-white text-[#137fec] text-sm font-bold shadow-lg transition-all disabled:opacity-50'}
                     >
-                        {isGenerating ? 'Generating SOP...' : 'Generate SOP Now'}
+                        {isGenerating ? 'Generating SOP...' : showGenerateButton ? 'Generate SOP Now' : 'Generate SOP'}
                     </button>
                 </div>
             )}
 
             <div className="relative w-full max-w-2xl flex-1 flex flex-col justify-center space-y-6">
                 {status === 'idle' ? (
-                    <div className="text-center text-white/30">
-                        <p className="text-lg font-medium">Tap the microphone to start.</p>
-                        <p className="text-sm mt-2">I will listen automatically when you speak.</p>
-                    </div>
+                    hasHistory ? (
+                        <div className="text-center text-white/80">
+                            <p className="text-lg font-bold">Session paused</p>
+                            <p className="text-sm mt-2">Your {interviewMessages.length} messages are saved. Tap play to continue{canGenerate ? ', or generate your SOP now' : ''}.</p>
+                        </div>
+                    ) : (
+                        <div className="text-center text-white/30">
+                            <p className="text-lg font-medium">Tap the microphone to start.</p>
+                            <p className="text-sm mt-2">I will listen automatically when you speak.</p>
+                        </div>
+                    )
                 ) : (
                     <>
                         <div className="text-center">
@@ -440,10 +463,10 @@ export default function DriveMode() {
 
                 <div className="text-center pb-safe">
                     <p className="text-white font-bold text-lg">
-                        {status === 'idle' ? 'Start Session' : status === 'listening' ? 'Listening...' : status === 'speaking' ? 'Speaking...' : 'Processing'}
+                        {status === 'idle' ? (hasHistory ? 'Resume Session' : 'Start Session') : status === 'listening' ? 'Listening...' : status === 'speaking' ? 'Speaking...' : 'Processing'}
                     </p>
                     <p className="text-white/30 text-sm mt-1">
-                        {status === 'idle' ? 'Tap to begin hands-free mode' : 'Tap Square to stop session'}
+                        {status === 'idle' ? (hasHistory ? 'Tap to continue where you left off' : 'Tap to begin hands-free mode') : 'Tap Square to pause the session'}
                     </p>
                 </div>
             </div>
