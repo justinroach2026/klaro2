@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
+import { sopMarkdownProps } from '../../components/sopMarkdown';
 import { useStore } from '../../store';
 import { supabase, suggestSOPEdit, getPendingSuggestions, resolveSuggestion, publishSOP } from '../../lib/supabase';
 import SOPHistoryPanel from '../../components/SOPHistoryPanel';
@@ -480,7 +481,7 @@ function SOPViewerContent({ initialSop, onBack }: { initialSop: SopData; onBack:
                                 prose-pre:border prose-pre:rounded-xl
                                 prose-blockquote:border-l-[#137fec] prose-blockquote:bg-[#137fec]/5 prose-blockquote:py-2 prose-blockquote:px-4 prose-blockquote:rounded-r-xl prose-blockquote:not-italic
                             ">
-                                <ReactMarkdown>{displayContent}</ReactMarkdown>
+                                <ReactMarkdown {...sopMarkdownProps}>{displayContent}</ReactMarkdown>
                             </div>
                         )}
                     </div>

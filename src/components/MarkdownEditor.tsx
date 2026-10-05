@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
+import { sopMarkdownProps } from './sopMarkdown';
 import {
     Bold,
     Italic,
@@ -259,7 +260,7 @@ export default function MarkdownEditor({ value, onChange, className = '' }: Mark
                     [&_li>p]:mb-1
                     [&_input[type=checkbox]]:mr-2
                 ">
-                    <ReactMarkdown>{value}</ReactMarkdown>
+                    <ReactMarkdown {...sopMarkdownProps}>{value}</ReactMarkdown>
                 </div>
             ) : (
                 <textarea
