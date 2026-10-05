@@ -26,6 +26,7 @@ interface GeminiPart {
     text?: string;
     thought?: boolean;
     inlineData?: { mimeType: string; data: string };
+    fileData?: { fileUri: string; mimeType: string };
 }
 
 interface GeminiResponse {
@@ -176,4 +177,164 @@ function wrapPcmAsWav(pcm: Buffer, sampleRate: number): Buffer {
     header.write('data', 36);
     header.writeUInt32LE(pcm.length, 40);
     return Buffer.concat([header, pcm]);
+}
+
+// ─── Video (Files API) ──────────────────────────────────────────────────────
+
+export const MAX_VIDEO_BYTES = 500 * 1024 * 1024;
+export const VIDEO_MIME_TYPES = ['video/mp4', 'video/webm', 'video/quicktime'];
+
+export interface VideoFile {
+    name: string;
+    uri: string;
+    mimeType: string;
+    state: 'PROCESSING' | 'ACTIVE' | 'FAILED';
+    sizeBytes: number;
+}
+
+function apiKeyOrThrow(): string {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) throw new GeminiError(500, 'GEMINI_API_KEY not configured on server');
+    return apiKey;
+}
+
+/**
+ * Starts a resumable upload and returns the pre-authorised upload URL. The browser PUTs the
+ * video straight to Google (a Vercel function can't take a >4.5 MB body) and never sees the API key.
+ */
+export async function startVideoUpload(opts: { displayName: string; mimeType: string; sizeBytes: number }): Promise<string> {
+    const res = await fetch('https://generativelanguage.googleapis.com/upload/v1beta/files', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': apiKeyOrThrow(),
+            'X-Goog-Upload-Protocol': 'resumable',
+            'X-Goog-Upload-Command': 'start',
+            'X-Goog-Upload-Header-Content-Length': String(opts.sizeBytes),
+            'X-Goog-Upload-Header-Content-Type': opts.mimeType,
+        },
+        body: JSON.stringify({ file: { display_name: opts.displayName } }),
+    });
+    const uploadUrl = res.headers.get('x-goog-upload-url');
+    if (!res.ok || !uploadUrl) throw new GeminiError(res.status || 502, 'Could not start video upload');
+    return uploadUrl;
+}
+
+/**
+ * Looks a file up by display name. Google's upload endpoint sends no CORS header on the final
+ * response, so the browser can't read the file id back; the unique display name stands in for it.
+ */
+export async function findVideoFile(displayName: string): Promise<VideoFile | null> {
+    let pageToken = '';
+    for (let page = 0; page < 5; page++) {
+        const res = await fetch(
+            `${BASE_URL}/files?pageSize=100${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`,
+            { headers: { 'x-goog-api-key': apiKeyOrThrow() } },
+        );
+        const data = (await res.json().catch(() => ({}))) as {
+            files?: { name: string; displayName?: string; uri: string; mimeType: string; state: VideoFile['state']; sizeBytes?: string }[];
+            nextPageToken?: string;
+            error?: { message?: string };
+        };
+        if (!res.ok) throw new GeminiError(res.status, data.error?.message || 'Could not list uploaded files');
+        const match = data.files?.find(f => f.displayName === displayName);
+        if (match) return { ...match, sizeBytes: Number(match.sizeBytes) || 0 };
+        if (!data.nextPageToken) return null;
+        pageToken = data.nextPageToken;
+    }
+    return null;
+}
+
+export async function deleteFile(name: string): Promise<void> {
+    await fetch(`${BASE_URL}/${name}`, { method: 'DELETE', headers: { 'x-goog-api-key': apiKeyOrThrow() } }).catch(() => undefined);
+}
+
+export interface VideoSOP {
+    title: string;
+    purpose: string;
+    roles: string[];
+    prerequisites: string[];
+    steps: { timestampSeconds: number; title: string; instruction: string; notes?: string }[];
+    qualityStandards: string[];
+    tips: string[];
+    troubleshooting: string[];
+}
+
+const strings = (v: unknown): string[] =>
+    Array.isArray(v) ? v.filter((s): s is string => typeof s === 'string' && s.trim() !== '') : [];
+
+/** Gemini's JSON is model output, so coerce it into the shape the client relies on. */
+function normaliseVideoSOP(raw: Record<string, unknown>): VideoSOP {
+    const steps = (Array.isArray(raw.steps) ? raw.steps : [])
+        .map(s => s as Record<string, unknown>)
+        .filter(s => typeof s.title === 'string' && typeof s.instruction === 'string')
+        .map(s => ({
+            timestampSeconds: Math.max(0, Number(s.timestampSeconds) || 0),
+            title: s.title as string,
+            instruction: s.instruction as string,
+            ...(typeof s.notes === 'string' && s.notes.trim() && { notes: s.notes }),
+        }));
+    if (steps.length === 0) throw new GeminiError(422, 'No process steps could be identified in this video');
+
+    return {
+        title: typeof raw.title === 'string' && raw.title.trim() ? raw.title : 'Untitled process',
+        purpose: typeof raw.purpose === 'string' ? raw.purpose : '',
+        roles: strings(raw.roles),
+        prerequisites: strings(raw.prerequisites),
+        steps,
+        qualityStandards: strings(raw.qualityStandards),
+        tips: strings(raw.tips),
+        troubleshooting: strings(raw.troubleshooting),
+    };
+}
+
+export async function videoToSop(opts: {
+    fileUri: string;
+    mimeType: string;
+    languageName: string;
+    industryName: string;
+    countryName: string;
+}): Promise<VideoSOP> {
+    const prompt = `You are an expert ${opts.industryName} consultant and SOP writer. This video is a screen recording of someone performing a business process while narrating it. Watch what happens on screen and listen to the narration, then document the process as a Standard Operating Procedure.
+
+Rules:
+- Write everything in ${opts.languageName}, even if the narration is in another language.
+- Document only what is actually shown or said. Do not invent steps, tools, or screens.
+- List steps in the order they are performed. Each step is one clear action or decision.
+- "timestampSeconds" is the time in the video (in seconds) where the screen best shows that step completed or in progress, so a screenshot taken there illustrates it.
+- Use the narrator's exact names for buttons, fields, systems and documents.
+- Where the narrator mentions rules, exceptions, or mistakes to avoid, put them in "notes", "qualityStandards" or "troubleshooting" as appropriate.
+- "qualityStandards", "tips" and "troubleshooting" must come only from things the narrator says or the screen shows. If there are none, return an empty array.
+- The procedure takes place in ${opts.countryName}; mention applicable regulation only if the video makes it relevant.
+- Never include passwords, API keys, or personal data you can see on screen.
+
+Respond with JSON only, matching exactly this shape:
+{
+  "title": string,
+  "purpose": string,
+  "roles": string[],
+  "prerequisites": string[],
+  "steps": [{ "timestampSeconds": number, "title": string, "instruction": string, "notes": string (optional) }],
+  "qualityStandards": string[],
+  "tips": string[],
+  "troubleshooting": string[]
+}`;
+
+    const data = await generate(chatModel(), {
+        contents: [{
+            role: 'user',
+            parts: [
+                { fileData: { fileUri: opts.fileUri, mimeType: opts.mimeType } },
+                { text: prompt },
+            ],
+        }],
+        generationConfig: { temperature: 0.3, responseMimeType: 'application/json' },
+    });
+
+    try {
+        return normaliseVideoSOP(JSON.parse(textOf(data)) as Record<string, unknown>);
+    } catch (error) {
+        if (error instanceof GeminiError) throw error;
+        throw new GeminiError(502, 'The model returned an unreadable response. Please try again.');
+    }
 }

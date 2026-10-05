@@ -1,4 +1,5 @@
 import ReactMarkdown from 'react-markdown';
+import { sopMarkdownProps } from './sopMarkdown';
 import { Shield } from 'lucide-react';
 
 interface PDFRendererProps {
@@ -62,7 +63,9 @@ export default function PDFRenderer({
             {/* Content Body */}
             <main className="prose prose-sm prose-gray max-w-none">
                 <ReactMarkdown
+                    urlTransform={sopMarkdownProps.urlTransform}
                     components={{
+                        ...sopMarkdownProps.components,
                         h1: ({ children }) => <h1 className="text-2xl font-black mt-10 mb-4 text-gray-900 pb-2 border-b border-gray-100">{children}</h1>,
                         h2: ({ children }) => <h2 className="text-xl font-bold mt-8 mb-4 text-gray-900">{children}</h2>,
                         h3: ({ children }) => <h3 className="text-lg font-bold mt-6 mb-3 text-gray-800">{children}</h3>,
