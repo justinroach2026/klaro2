@@ -1,4 +1,5 @@
 import { type LanguageCode, SUPPORTED_LANGUAGES } from '../../store';
+import { aiFetch } from '../ai/client';
 
 const SAMPLE_RATE = 16000;
 
@@ -165,28 +166,20 @@ export class VoiceEngine {
     }
 
     /**
-     * Transcribe using OpenAI (Browserside for dev)
+     * Transcribe via the server-side Gemini function (key never reaches the browser)
      */
     async transcribe(audioBlob: Blob, language?: LanguageCode): Promise<{ text: string; detectedLanguage: string }> {
         if (audioBlob.size < 100) return { text: '', detectedLanguage: 'en' };
 
-        const formData = new FormData();
-        formData.append('file', audioBlob, 'audio.webm');
-        formData.append('model', 'whisper-1');
-        if (language) formData.append('language', language);
-
-        const apiKey = import.meta.env.OPENAI_API_KEY;
-        if (!apiKey) throw new Error('OpenAI API key not found');
-
-        const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${apiKey}` },
-            body: formData,
+        const response = await aiFetch('transcribe', {
+            audio: await blobToBase64(audioBlob),
+            mimeType: 'audio/webm',
+            language,
         });
 
         if (!response.ok) {
-            const error = await response.json();
-            throw new Error(`Transcription failed: ${error.error?.message || response.statusText}`);
+            const error = await response.json().catch(() => ({}));
+            throw new Error(`Transcription failed: ${error.error || response.statusText}`);
         }
 
         const data = await response.json();
@@ -197,35 +190,20 @@ export class VoiceEngine {
     }
 
     /**
-     * Text to Speech using OpenAI for natural voice
+     * Text to Speech via the server-side Gemini function, falling back to the browser voice
      */
     async speak(text: string, language: LanguageCode): Promise<void> {
         return new Promise(async (resolve, reject) => {
             try {
-                const apiKey = import.meta.env.OPENAI_API_KEY;
-                if (!apiKey) throw new Error('OpenAI API key not found');
-
-                const response = await fetch('https://api.openai.com/v1/audio/speech', {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${apiKey}`,
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        model: 'tts-1',
-                        input: text,
-                        voice: 'alloy', // Pro voice: alloy, echo, fable, onyx, nova, shimmer
-                        response_format: 'mp3',
-                    }),
-                });
+                const response = await aiFetch('speak', { text });
 
                 if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(`TTS failed: ${error.error?.message || response.statusText}`);
+                    const error = await response.json().catch(() => ({}));
+                    throw new Error(`TTS failed: ${error.error || response.statusText}`);
                 }
 
-                const audioBlob = await response.blob();
-                const audioUrl = URL.createObjectURL(audioBlob);
+                const { audio: base64, mimeType } = await response.json();
+                const audioUrl = URL.createObjectURL(base64ToBlob(base64, mimeType));
                 const audio = new Audio(audioUrl);
 
                 audio.onended = () => {
@@ -241,7 +219,7 @@ export class VoiceEngine {
                 await audio.play();
             } catch (error) {
                 console.error('TTS Error:', error);
-                // Fallback to basic browser TTS if OpenAI fails
+                // Fallback to basic browser TTS if the server voice fails
                 if (this.synthesis) {
                     const utterance = new SpeechSynthesisUtterance(text);
                     utterance.lang = SUPPORTED_LANGUAGES[language].code;
@@ -280,6 +258,20 @@ export class VoiceEngine {
         }
         this.mediaRecorder = null;
     }
+}
+
+function blobToBase64(blob: Blob): Promise<string> {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve((reader.result as string).split(',')[1]);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(blob);
+    });
+}
+
+function base64ToBlob(base64: string, mimeType: string): Blob {
+    const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+    return new Blob([bytes], { type: mimeType });
 }
 
 export const voiceEngine = new VoiceEngine();

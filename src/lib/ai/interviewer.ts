@@ -1,26 +1,19 @@
+import { aiFetch } from './client';
 import { type LanguageCode, type IndustryCode, type CountryCode, SUPPORTED_INDUSTRIES, SUPPORTED_COUNTRIES } from '../../store';
 
 /**
- * Call the server-side AI proxy instead of the OpenAI SDK directly.
+ * Call the server-side AI function (Gemini) rather than a provider SDK directly.
  * The API key stays server-side only — never exposed to the browser.
  */
 async function chatCompletion(options: {
     messages: Message[];
     temperature?: number;
-    max_tokens?: number;
-    model?: string;
     response_format?: { type: string };
 }): Promise<string> {
-    const res = await fetch('/api/ai/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            messages: options.messages,
-            temperature: options.temperature ?? 0.7,
-            max_tokens: options.max_tokens,
-            model: options.model ?? 'gpt-4o',
-            response_format: options.response_format,
-        }),
+    const res = await aiFetch('chat', {
+        messages: options.messages,
+        temperature: options.temperature ?? 0.7,
+        response_format: options.response_format,
     });
 
     if (!res.ok) {
@@ -36,11 +29,7 @@ async function chatCompletion(options: {
  * Researches best practices for a given query using the server-side search tool.
  */
 export async function researchBestPractice(query: string, context?: string): Promise<string> {
-    const res = await fetch('/api/ai/search', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, context }),
-    });
+    const res = await aiFetch('search', { query, context });
 
     if (!res.ok) {
         throw new Error('Research failed');
@@ -298,11 +287,7 @@ export class AIInterviewer {
         if (urls.length > 0) {
             for (const url of urls) {
                 try {
-                    const res = await fetch('/api/ai/fetch-url', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ url })
-                    });
+                    const res = await aiFetch('fetch-url', { url });
                     const data = await res.json();
                     if (data.success && data.content) {
                         contextAddition += `\n\n--- Content from ${url} ---\n${data.content}\n-----------------------------`;
