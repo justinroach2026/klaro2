@@ -264,11 +264,15 @@ export class AIInterviewer {
     }
 
     /**
-     * Get AI response to user input (Legacy support)
+     * Plain conversational reply for voice mode. Deliberately skips the JSON + full-SOP rewrite that
+     * getResponseWithSuggestions asks for: voice mode discards the SOP, and generating it every turn
+     * made each reply several seconds slower (and slower still as the conversation grew).
      */
     async getResponse(userMessage: string): Promise<string> {
-        const result = await this.getResponseWithSuggestions(userMessage, '');
-        return result.chatResponse;
+        this.conversationHistory.push({ role: 'user', content: userMessage });
+        const reply = await chatCompletion({ messages: this.conversationHistory, temperature: 0.6 });
+        this.conversationHistory.push({ role: 'assistant', content: reply });
+        return reply;
     }
 
     /**
