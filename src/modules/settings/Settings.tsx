@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore, SUPPORTED_LANGUAGES, SUPPORTED_INDUSTRIES, SUPPORTED_COUNTRIES, type LanguageCode, type IndustryCode, type CountryCode } from '../../store';
 import { updateProfile, supabase } from '../../lib/supabase';
+import TeamSettings from './TeamSettings';
 import { ArrowLeft, Save, Globe, Building2, MapPin, Bot, CheckCircle2, Briefcase, Upload, Link, Mail, Phone, MapPinned, ImagePlus, Trash2, Loader2 } from 'lucide-react';
 
 export default function Settings() {
@@ -156,6 +157,8 @@ export default function Settings() {
                     <h1 className="text-3xl font-heading font-bold text-text">Settings</h1>
                     <p className="text-text-light mt-1">Manage your preferences. Changes will be used for all future SOP interviews.</p>
                 </div>
+
+                <TeamSettings />
 
                 <section className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
                     <div className="flex items-center gap-3 mb-6">

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { signInWithMagicLink, signInWithPassword, signUpWithPassword, resetPasswordForEmail } from '../../lib/supabase';
 import { useStore } from '../../store';
+import { postAuthPath } from '../../lib/review';
 import { Mail, Lock, Loader2, CheckCircle2, AlertCircle, ArrowLeft, UserPlus, Eye, EyeOff, Zap } from 'lucide-react';
 
 const MAGIC_LINK_COOLDOWN_SECONDS = 60;
@@ -21,7 +22,7 @@ export default function Auth() {
     const navigate = useNavigate();
 
     useEffect(() => {
-        if (user) navigate('/dashboard', { replace: true });
+        if (user) navigate(postAuthPath(), { replace: true });
     }, [user, navigate]);
 
     useEffect(() => {

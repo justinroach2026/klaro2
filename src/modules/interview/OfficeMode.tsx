@@ -373,8 +373,10 @@ export default function OfficeMode() {
 
             // Publish the autosaved draft in place when one exists, otherwise insert
             const currentDraftId = useStore.getState().draftSOPId;
+            // The database decides whether it goes live approved or waits for the author's manager.
+            let approvalStatus: string | undefined;
             if (currentDraftId) {
-                const { error } = await supabase!
+                const { data, error } = await supabase!
                     .from('sops')
                     .update({
                         title: title,
@@ -383,10 +385,13 @@ export default function OfficeMode() {
                         status: 'published',
                         updated_at: new Date().toISOString()
                     })
-                    .eq('id', currentDraftId);
+                    .eq('id', currentDraftId)
+                    .select('approval_status')
+                    .single();
                 if (error) throw error;
+                approvalStatus = data?.approval_status;
             } else {
-                const { error } = await supabase!
+                const { data, error } = await supabase!
                     .from('sops')
                     .insert({
                         team_id: teamId,
@@ -398,8 +403,11 @@ export default function OfficeMode() {
                         created_by: user.id,
                         status: 'published',
                         related_sop_ids: []
-                    });
+                    })
+                    .select('approval_status')
+                    .single();
                 if (error) throw error;
+                approvalStatus = data?.approval_status;
             }
 
             if (sessionIdRef.current) {
@@ -417,7 +425,12 @@ export default function OfficeMode() {
             }
 
             setIsComplete(true);
-            addMessage({ role: 'ai', content: "🎉 Your SOP has been generated and saved! You can now view it in your dashboard." });
+            addMessage({
+                role: 'ai',
+                content: approvalStatus !== undefined && approvalStatus !== 'approved'
+                    ? "🎉 Your SOP has been published and sent to your manager for approval. Until they approve it, it shows a \"not yet approved\" warning."
+                    : "🎉 Your SOP has been generated and saved! You can now view it in your dashboard.",
+            });
         } catch (error: any) {
             console.error('SOP generation error:', error);
             const msg = error?.message || error?.error_description || JSON.stringify(error) || 'Unknown error occurred.';

@@ -195,8 +195,10 @@ export default function DriveMode() {
             // Publish the autosaved draft in place when one exists (e.g. after a
             // switch from Office Mode), otherwise insert a new SOP
             const currentDraftId = useStore.getState().draftSOPId;
+            // The database decides whether it goes live approved or waits for the author's manager.
+            let approvalStatus: string | undefined;
             if (currentDraftId) {
-                const { error } = await supabase!
+                const { data, error } = await supabase!
                     .from('sops')
                     .update({
                         title: title,
@@ -205,10 +207,13 @@ export default function DriveMode() {
                         status: 'published',
                         updated_at: new Date().toISOString()
                     })
-                    .eq('id', currentDraftId);
+                    .eq('id', currentDraftId)
+                    .select('approval_status')
+                    .single();
                 if (error) throw error;
+                approvalStatus = data?.approval_status;
             } else {
-                const { error } = await supabase!
+                const { data, error } = await supabase!
                     .from('sops')
                     .insert({
                         team_id: team.id,
@@ -219,8 +224,11 @@ export default function DriveMode() {
                         version: 1,
                         created_by: user.id,
                         status: 'published'
-                    });
+                    })
+                    .select('approval_status')
+                    .single();
                 if (error) throw error;
+                approvalStatus = data?.approval_status;
             }
 
             if (sessionIdRef.current) {
@@ -236,8 +244,12 @@ export default function DriveMode() {
             store.setSopHistory([]);
 
             setIsComplete(true);
-            setCurrentAIResponse("🎉 Your SOP has been generated! You can now return to the dashboard.");
-            voiceEngine.speak("Your SOP has been generated. You can now return to the dashboard.", selectedLanguage);
+            const awaitingApproval = approvalStatus !== undefined && approvalStatus !== 'approved';
+            const doneText = awaitingApproval
+                ? "Your SOP has been published and sent to your manager for approval. Until they approve it, it shows a 'not yet approved' warning."
+                : "Your SOP has been generated. You can now return to the dashboard.";
+            setCurrentAIResponse(`🎉 ${doneText}`);
+            voiceEngine.speak(doneText, selectedLanguage);
         } catch (error) {
             console.error('SOP generation error:', error);
             alert('Failed to generate SOP.');

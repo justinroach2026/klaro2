@@ -11,6 +11,7 @@ import Settings from './modules/settings/Settings';
 import InterviewPage from './modules/interview/InterviewPage';
 import SOPViewer from './modules/sop/SOPViewer';
 import RecordingPage from './modules/recording/RecordingPage';
+import JoinTeam from './modules/team/JoinTeam';
 
 function App() {
   const { theme } = useStore();
@@ -39,6 +40,7 @@ function App() {
           <Route path="/auth" element={<Auth />} />
           <Route path="/auth/callback" element={<AuthCallback />} />
           <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="/join" element={<JoinTeam />} />
           <Route element={<AuthGuard />}>
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/settings" element={<Settings />} />

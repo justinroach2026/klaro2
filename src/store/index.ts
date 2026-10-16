@@ -86,6 +86,8 @@ interface Profile {
     company_email?: string;
     company_phone?: string;
     company_address?: string;
+    manager_id?: string | null;
+    email?: string | null;
 }
 
 interface Team {
