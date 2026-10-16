@@ -76,10 +76,12 @@ ALTER TABLE public.sops
         CHECK (approval_status IN ('approved', 'pending', 'changes_requested')),
     ADD COLUMN IF NOT EXISTS pending_title text,
     ADD COLUMN IF NOT EXISTS pending_content text,
-    ADD COLUMN IF NOT EXISTS pending_by uuid REFERENCES public.profiles(id) ON DELETE SET NULL,
+    -- pending_by / approved_by are deliberately not foreign keys: a second sops→profiles link would make
+    -- the existing `profiles(full_name)` embeds ambiguous and break clients still running older code.
+    ADD COLUMN IF NOT EXISTS pending_by uuid,
     ADD COLUMN IF NOT EXISTS pending_at timestamptz,
     ADD COLUMN IF NOT EXISTS review_note text,
-    ADD COLUMN IF NOT EXISTS approved_by uuid REFERENCES public.profiles(id) ON DELETE SET NULL,
+    ADD COLUMN IF NOT EXISTS approved_by uuid,
     ADD COLUMN IF NOT EXISTS approved_at timestamptz;
 
 -- Nobody has signed off an unowned SOP.
