@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
+import { sopMarkdownProps } from '../../components/sopMarkdown';
 import { useStore, messageText } from '../../store';
 import { voiceEngine } from '../../lib/voice';
 import { AIInterviewer, generateBestPracticeSOP } from '../../lib/ai/interviewer';
@@ -786,13 +787,13 @@ export default function OfficeMode() {
                             <div className="relative">
                                 {/* Previewing Pending State */}
                                 <div className={`prose prose-blue dark:prose-invert max-w-none transition-all duration-500 ${pendingUpdate ? 'blur-sm opacity-30 select-none' : ''}`}>
-                                    <ReactMarkdown>{sopContent || '# New Standard Operating Procedure\n*Complete the interview to generate your first draft...*'}</ReactMarkdown>
+                                    <ReactMarkdown {...sopMarkdownProps}>{sopContent || '# New Standard Operating Procedure\n*Complete the interview to generate your first draft...*'}</ReactMarkdown>
                                 </div>
 
                                 {pendingUpdate && (
                                     <div className="absolute inset-0 z-10 animate-in fade-in duration-500">
                                         <div className="prose prose-blue dark:prose-invert max-w-none">
-                                            <ReactMarkdown>{pendingUpdate}</ReactMarkdown>
+                                            <ReactMarkdown {...sopMarkdownProps}>{pendingUpdate}</ReactMarkdown>
                                         </div>
                                     </div>
                                 )}

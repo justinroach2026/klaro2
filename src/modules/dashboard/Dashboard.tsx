@@ -24,6 +24,7 @@ import {
     Mic,
     Play,
     PenLine,
+    Video,
 } from 'lucide-react';
 
 interface SOP {
@@ -396,7 +397,7 @@ export default function Dashboard() {
                 )}
 
                 {isCreator ? (
-                    <div className="mb-12">
+                    <div className="mb-12 flex flex-col md:flex-row gap-4">
                         <button
                             onClick={() => navigate('/interview')}
                             className="group relative overflow-hidden flex items-center gap-6 w-full md:w-auto p-7 bg-gradient-to-r from-[#137fec] to-[#0f66bd] rounded-3xl text-white shadow-2xl shadow-[#137fec]/20 hover:shadow-[#137fec]/35 hover:scale-[1.01] transition-all text-left"
@@ -408,6 +409,20 @@ export default function Dashboard() {
                             <div>
                                 <div className="font-black text-xl tracking-tight">Create New SOP</div>
                                 <div className="text-white/60 font-medium mt-0.5">Start a voice interview with AI</div>
+                            </div>
+                            <ArrowRight className="w-5 h-5 ml-auto opacity-0 translate-x-3 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300 mr-2" />
+                        </button>
+                        <button
+                            onClick={() => navigate('/recording')}
+                            className="group relative overflow-hidden flex items-center gap-6 w-full md:w-auto p-7 bg-gradient-to-r from-[#7c3aed] to-[#5b21b6] rounded-3xl text-white shadow-2xl shadow-violet-600/20 hover:shadow-violet-600/35 hover:scale-[1.01] transition-all text-left"
+                        >
+                            <div className="absolute inset-0 bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                            <div className="w-14 h-14 bg-white/15 backdrop-blur rounded-2xl flex items-center justify-center flex-shrink-0">
+                                <Video className="w-7 h-7" />
+                            </div>
+                            <div>
+                                <div className="font-black text-xl tracking-tight">Create from Recording</div>
+                                <div className="text-white/60 font-medium mt-0.5">Record your screen and explain it</div>
                             </div>
                             <ArrowRight className="w-5 h-5 ml-auto opacity-0 translate-x-3 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300 mr-2" />
                         </button>

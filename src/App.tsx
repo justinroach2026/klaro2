@@ -10,6 +10,7 @@ import Dashboard from './modules/dashboard/Dashboard';
 import Settings from './modules/settings/Settings';
 import InterviewPage from './modules/interview/InterviewPage';
 import SOPViewer from './modules/sop/SOPViewer';
+import RecordingPage from './modules/recording/RecordingPage';
 
 function App() {
   const { theme } = useStore();
@@ -42,6 +43,7 @@ function App() {
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/interview" element={<InterviewPage />} />
+            <Route path="/recording" element={<RecordingPage />} />
             <Route path="/sop/:id" element={<SOPViewer />} />
           </Route>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
