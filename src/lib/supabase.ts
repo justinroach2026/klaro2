@@ -247,35 +247,11 @@ export const getRelatedSOPs = async (sopIds: string[]) => {
     return data || [];
 };
 
-export const markSOPReviewed = async (sopId: string) => {
-    const now = new Date();
+// Marking reviewed, claiming and approving go through the RPCs in ./review.ts (owner-only rules).
 
-    // Fetch current review_interval_days to compute next_review_at
-    const { data: sop } = await supabase
-        ?.from('sops')
-        .select('review_interval_days')
-        .eq('id', sopId)
-        .single() || { data: null };
-
-    const next = sop?.review_interval_days
-        ? new Date(now.getTime() + sop.review_interval_days * 86400000).toISOString()
-        : null;
-
-    const { data, error } = await supabase
-        ?.from('sops')
-        .update({ last_reviewed_at: now.toISOString(), next_review_at: next })
-        .eq('id', sopId)
-        .select()
-        .single()
-        || { data: null, error: new Error('Supabase not initialized') };
-
-    if (error) throw error;
-    return data;
-};
-
+// Owner only (enforced by the sops_guard trigger); returns the row with the recomputed next_review_at.
 export const updateSOPOwnership = async (sopId: string, updates: {
-    owner_id?: string;
-    review_interval_days?: number | null;
+    review_interval_days: number | null;
 }) => {
     const { data, error } = await supabase
         ?.from('sops')

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase, getOverdueSOPs, markSOPReviewed, getInProgressSessions, getDraftSOPs } from '../../lib/supabase';
+import { supabase, getOverdueSOPs, getInProgressSessions, getDraftSOPs } from '../../lib/supabase';
+import { SOP_SELECT, markSopReviewed, getTeamMembers, memberName, hasPendingRevision, isReviewOverdue, type TeamMember, type WorkflowFields } from '../../lib/review';
 import { useStore, SUPPORTED_INDUSTRIES } from '../../store';
 import { INDUSTRY_TEMPLATES } from '../../lib/templates';
 import ThemeToggle from '../../shared/ThemeToggle';
@@ -25,9 +26,11 @@ import {
     Play,
     PenLine,
     Video,
+    ShieldAlert,
+    FileClock,
 } from 'lucide-react';
 
-interface SOP {
+interface SOP extends WorkflowFields {
     id: string;
     title: string;
     content: string;
@@ -36,10 +39,6 @@ interface SOP {
     updated_at: string;
     tags?: string[];
     version?: number;
-    owner_id?: string | null;
-    review_interval_days?: number | null;
-    last_reviewed_at?: string | null;
-    next_review_at?: string | null;
     related_sop_ids?: string[];
     profiles?: {
         full_name: string;
@@ -66,6 +65,7 @@ export default function Dashboard() {
     const [searchQuery, setSearchQuery] = useState('');
     const [showUserMenu, setShowUserMenu] = useState(false);
     const [depAlertCount, setDepAlertCount] = useState(0);
+    const [members, setMembers] = useState<TeamMember[]>([]);
     const { user, profile, selectedIndustry, setIsLoading, setError, isLoading, setInterviewMode, setSelectedSOPTemplate } = useStore();
     const templates = INDUSTRY_TEMPLATES[selectedIndustry] || INDUSTRY_TEMPLATES.other;
     const isCreator = !profile?.role || profile.role === 'creator';
@@ -77,7 +77,7 @@ export default function Dashboard() {
             try {
                 const response = await supabase
                     ?.from('sops')
-                    .select('*, profiles(full_name)')
+                    .select(SOP_SELECT)
                     .eq('status', 'published')
                     .order('updated_at', { ascending: false });
 
@@ -139,6 +139,7 @@ export default function Dashboard() {
         };
 
         fetchSOPs();
+        getTeamMembers().then(setMembers).catch(err => console.error('Error fetching team:', err));
         fetchOverdue();
         fetchInProgress();
         fetchDrafts();
@@ -152,12 +153,22 @@ export default function Dashboard() {
 
     const handleMarkReviewed = async (sopId: string) => {
         try {
-            await markSOPReviewed(sopId);
+            const updated = await markSopReviewed<SOP>(sopId);
             setOverdueSOPs(prev => prev.filter(s => s.id !== sopId));
+            setSops(prev => prev.map(s => (s.id === sopId ? { ...s, ...updated } : s)));
         } catch (err) {
             console.error('Failed to mark reviewed:', err);
         }
     };
+
+    const nameOf = (id?: string | null, fallback?: string) => memberName(members.find(m => m.id === id), fallback);
+    // Waiting on me: unapproved SOPs and pending revisions where I'm the approver.
+    const needsMyReview = sops.filter(s => user && s.owner_id === user.id && (s.approval_status !== 'approved' || hasPendingRevision(s)));
+    // Waiting on someone else: my submissions that aren't approved yet.
+    const awaitingOthers = sops.filter(s => user && s.owner_id !== user.id && (
+        (hasPendingRevision(s) && s.pending_by === user.id)
+        || (s.approval_status !== 'approved' && s.created_by === user.id)
+    ));
 
     const filteredSops = sops.filter(sop =>
         sop.title.toLowerCase().includes(searchQuery.toLowerCase())
@@ -335,31 +346,98 @@ export default function Dashboard() {
                     </div>
                 )}
 
+                {needsMyReview.length > 0 && (
+                    <div className="mb-8">
+                        <div className="flex items-center gap-2 mb-4">
+                            <ShieldAlert className="w-4 h-4 text-amber-600" />
+                            <span className="text-xs font-bold text-amber-700 dark:text-amber-400 uppercase tracking-widest">
+                                Needs your approval ({needsMyReview.length})
+                            </span>
+                        </div>
+                        <div className="space-y-3">
+                            {needsMyReview.map(sop => (
+                                <div key={sop.id} className="flex items-center gap-4 p-4 bg-amber-50 dark:bg-amber-500/5 border border-amber-200 dark:border-amber-500/15 rounded-2xl">
+                                    <div className="w-10 h-10 bg-amber-100 dark:bg-amber-500/10 rounded-xl flex items-center justify-center flex-shrink-0">
+                                        {hasPendingRevision(sop) ? <FileClock className="w-5 h-5 text-amber-600" /> : <ShieldAlert className="w-5 h-5 text-amber-600" />}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="font-bold text-gray-800 dark:text-white/80 truncate">{sop.title}</p>
+                                        <p className="text-xs text-amber-700 dark:text-amber-400 font-bold mt-0.5">
+                                            {hasPendingRevision(sop)
+                                                ? `Revision by ${nameOf(sop.pending_by)}${sop.pending_at ? ` · ${new Date(sop.pending_at).toLocaleDateString()}` : ''}`
+                                                : sop.approval_status === 'changes_requested'
+                                                    ? `You asked ${nameOf(sop.created_by)} for changes`
+                                                    : `New SOP by ${nameOf(sop.created_by)} · not yet approved`}
+                                        </p>
+                                    </div>
+                                    <button
+                                        onClick={() => navigate('/sop/' + sop.id, { state: { sop } })}
+                                        className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition-all flex-shrink-0"
+                                    >
+                                        Review
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {awaitingOthers.length > 0 && (
+                    <div className="mb-8">
+                        <div className="flex items-center gap-2 mb-4">
+                            <FileClock className="w-4 h-4 text-[#137fec]" />
+                            <span className="text-xs font-bold text-[#137fec] uppercase tracking-widest">
+                                Waiting for approval ({awaitingOthers.length})
+                            </span>
+                        </div>
+                        <div className="space-y-3">
+                            {awaitingOthers.map(sop => (
+                                <button
+                                    key={sop.id}
+                                    onClick={() => navigate('/sop/' + sop.id, { state: { sop } })}
+                                    className="w-full text-left flex items-center gap-4 p-4 bg-white dark:bg-white/3 border border-blue-100 dark:border-[#137fec]/15 rounded-2xl hover:shadow-md transition-all"
+                                >
+                                    <div className="flex-1 min-w-0">
+                                        <p className="font-bold text-gray-800 dark:text-white/80 truncate">{sop.title}</p>
+                                        <p className="text-xs text-gray-500 dark:text-white/40 font-bold mt-0.5">
+                                            {(hasPendingRevision(sop) ? sop.review_note : sop.approval_status === 'changes_requested' ? sop.review_note : null)
+                                                ? `${nameOf(sop.owner_id, 'Your manager')} asked for changes`
+                                                : sop.owner_id
+                                                    ? `With ${nameOf(sop.owner_id, 'your manager')} for approval`
+                                                    : 'Not claimed yet: ask your manager to claim it'}
+                                        </p>
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
                 {overdueSOPs.length > 0 && (
                     <div className="mb-8">
                         <div className="flex items-center gap-2 mb-4">
-                            <AlertTriangle className="w-4 h-4 text-amber-500" />
-                            <span className="text-xs font-bold text-amber-500 uppercase tracking-widest">
-                                Needs Review ({overdueSOPs.length})
+                            <AlertTriangle className="w-4 h-4 text-red-600" />
+                            <span className="text-xs font-bold text-red-600 uppercase tracking-widest">
+                                Review overdue ({overdueSOPs.length})
                             </span>
                         </div>
                         <div className="space-y-3">
                             {overdueSOPs.map(sop => {
                                 const daysOverdue = Math.floor((Date.now() - new Date(sop.next_review_at).getTime()) / (1000 * 60 * 60 * 24));
                                 return (
-                                    <div key={sop.id} className="flex items-center gap-4 p-4 bg-amber-50 dark:bg-amber-500/5 border border-amber-200 dark:border-amber-500/15 rounded-2xl">
-                                        <div className="w-10 h-10 bg-amber-100 dark:bg-amber-500/10 rounded-xl flex items-center justify-center flex-shrink-0">
-                                            <AlertTriangle className="w-5 h-5 text-amber-500" />
+                                    <div key={sop.id} className="flex items-center gap-4 p-4 bg-red-50 dark:bg-red-500/5 border border-red-200 dark:border-red-500/20 rounded-2xl">
+                                        <div className="w-10 h-10 bg-red-100 dark:bg-red-500/10 rounded-xl flex items-center justify-center flex-shrink-0">
+                                            <AlertTriangle className="w-5 h-5 text-red-600" />
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             <p className="font-bold text-gray-800 dark:text-white/80 truncate">{sop.title}</p>
-                                            <p className="text-xs text-amber-500 font-bold mt-0.5">
+                                            <p className="text-xs text-red-600 font-bold mt-0.5">
                                                 Overdue by {daysOverdue} day{daysOverdue !== 1 ? 's' : ''} · V{sop.version}
                                             </p>
                                         </div>
                                         <button
                                             onClick={() => handleMarkReviewed(sop.id)}
-                                            className="px-4 py-2 rounded-xl bg-amber-100 dark:bg-amber-500/10 hover:bg-amber-200 dark:hover:bg-amber-500/20 text-amber-600 dark:text-amber-300 text-xs font-bold transition-all flex items-center gap-1.5"
+                                            className="px-4 py-2 rounded-xl bg-red-100 dark:bg-red-500/10 hover:bg-red-200 dark:hover:bg-red-500/20 text-red-700 dark:text-red-300 text-xs font-bold transition-all flex items-center gap-1.5"
                                         >
                                             <CheckCircle2 className="w-3.5 h-3.5" />
                                             Reviewed
@@ -492,7 +570,7 @@ export default function Dashboard() {
                             {filteredSops.map((sop) => (
                                 <div
                                     key={sop.id}
-                                    className="bg-white dark:bg-white/3 border border-gray-100 dark:border-white/6 p-5 rounded-2xl hover:border-gray-200 dark:hover:border-white/12 hover:shadow-md dark:hover:bg-white/6 hover:-translate-y-0.5 transition-all cursor-pointer flex items-center gap-5 group shadow-sm"
+                                    className={`${isReviewOverdue(sop) ? 'bg-red-50 dark:bg-red-500/8 border-red-200 dark:border-red-500/25' : 'bg-white dark:bg-white/3 border-gray-100 dark:border-white/6'} border p-5 rounded-2xl hover:border-gray-200 dark:hover:border-white/12 hover:shadow-md dark:hover:bg-white/6 hover:-translate-y-0.5 transition-all cursor-pointer flex items-center gap-5 group shadow-sm`}
                                     onClick={() => navigate('/sop/' + sop.id, { state: { sop } })}
                                 >
                                     <div className="relative w-12 h-12 bg-gray-50 dark:bg-white/5 rounded-xl flex items-center justify-center text-gray-400 dark:text-white/30 group-hover:bg-[#137fec]/10 group-hover:text-[#137fec] transition-all flex-shrink-0">
@@ -514,6 +592,15 @@ export default function Dashboard() {
                                                 <Clock className="w-3 h-3" />
                                                 {new Date(sop.updated_at).toLocaleDateString()}
                                             </div>
+                                            {isReviewOverdue(sop) && (
+                                                <span className="text-[10px] bg-red-100 dark:bg-red-500/15 text-red-700 dark:text-red-300 px-2 py-0.5 rounded-full font-black uppercase tracking-tight">Review overdue</span>
+                                            )}
+                                            {sop.approval_status && sop.approval_status !== 'approved' && (
+                                                <span className="text-[10px] bg-amber-100 dark:bg-amber-500/15 text-amber-800 dark:text-amber-300 px-2 py-0.5 rounded-full font-black uppercase tracking-tight">Not approved</span>
+                                            )}
+                                            {hasPendingRevision(sop) && (
+                                                <span className="text-[10px] bg-blue-100 dark:bg-[#137fec]/15 text-blue-800 dark:text-blue-300 px-2 py-0.5 rounded-full font-black uppercase tracking-tight">Revision pending</span>
+                                            )}
                                             {sop.related_sop_ids && sop.related_sop_ids.length > 0 && (
                                                 <div className="flex items-center gap-1 text-[10px] font-bold text-[#137fec]/60 uppercase tracking-tight">
                                                     <Link2 className="w-3 h-3" />

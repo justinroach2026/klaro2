@@ -1,6 +1,6 @@
 import ReactMarkdown from 'react-markdown';
 import { sopMarkdownProps } from './sopMarkdown';
-import { Shield } from 'lucide-react';
+import { Shield, ShieldAlert } from 'lucide-react';
 
 interface PDFRendererProps {
     title: string;
@@ -10,6 +10,8 @@ interface PDFRendererProps {
     version?: number;
     updatedAt: string;
     tags?: string[];
+    notApproved?: boolean;
+    reviewOverdueSince?: string | null;
 }
 
 export default function PDFRenderer({
@@ -19,10 +21,20 @@ export default function PDFRenderer({
     companyLogoUrl,
     version,
     updatedAt,
-    tags
+    tags,
+    notApproved = false,
+    reviewOverdueSince = null,
 }: PDFRendererProps) {
     return (
         <div className="hidden print:block font-sans text-black bg-white min-h-screen">
+            {(notApproved || reviewOverdueSince) && (
+                <div className="mb-6 p-3 border-2 border-red-600 rounded-lg text-red-700 text-sm font-bold uppercase tracking-wider text-center">
+                    {notApproved && 'Not yet approved'}
+                    {notApproved && reviewOverdueSince && ' · '}
+                    {reviewOverdueSince && `Review overdue since ${new Date(reviewOverdueSince).toLocaleDateString()}`}
+                    {' · check with your line manager before relying on this copy'}
+                </div>
+            )}
             {/* Header */}
             <header className="border-b-2 border-gray-200 pb-6 mb-8 flex items-start justify-between">
                 <div>
@@ -53,9 +65,15 @@ export default function PDFRenderer({
                         <span className="font-bold text-gray-900 text-right">{new Date(updatedAt).toLocaleDateString()}</span>
                         
                         <span className="text-gray-500 font-bold uppercase tracking-widest">Status</span>
-                        <span className="font-bold text-green-600 flex items-center justify-end gap-1">
-                            <Shield className="w-3 h-3" /> Approved
-                        </span>
+                        {notApproved ? (
+                            <span className="font-bold text-red-600 flex items-center justify-end gap-1">
+                                <ShieldAlert className="w-3 h-3" /> Not approved
+                            </span>
+                        ) : (
+                            <span className="font-bold text-green-600 flex items-center justify-end gap-1">
+                                <Shield className="w-3 h-3" /> Approved
+                            </span>
+                        )}
                     </div>
                 </div>
             </header>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
+import { postAuthPath } from '../../lib/review';
 import { Loader2, AlertCircle } from 'lucide-react';
 
 // Landing page for links emailed by Supabase (confirmation + magic link).
@@ -26,7 +27,7 @@ export default function AuthCallback() {
             if (settled) return;
             settled = true;
             window.history.replaceState({}, '', window.location.pathname);
-            navigate('/dashboard', { replace: true });
+            navigate(postAuthPath(), { replace: true });
         };
 
         supabase?.auth.getSession().then(({ data: { session } }) => {
