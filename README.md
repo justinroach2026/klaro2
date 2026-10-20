@@ -10,7 +10,7 @@ Voice-first, multilingual SOP documentation. An AI interviewer (voice or chat) t
 - `api/ai/[action].ts` — the Vercel function behind `/api/ai/{chat,search,fetch-url,transcribe,speak}`. All Gemini calls happen here so the key never reaches the browser. Every request must carry a valid Supabase session token.
 - `api/_lib/` — shared handlers (Gemini wrapper, auth check, SSRF-safe URL fetcher).
 - `server/ai-proxy.ts` — dev-only Vite middleware that serves `/api/ai/*` with the same handlers, so `npm run dev` needs no extra tooling.
-- `supabase/migrations/` — schema and RLS policies.
+- `supabase/migrations/` — the database schema: a full baseline plus later changes (see Database below).
 
 ## Environment variables
 
@@ -28,6 +28,14 @@ Copy `.env.example` to `.env`. Server-only variables must **not** have a `VITE_`
 npm install
 npm run dev
 ```
+
+## Database (Supabase)
+
+`supabase/migrations/20261020000000_baseline.sql` creates the entire schema (tables, policies, functions, triggers, storage buckets and explicit grants), so a new project or Supabase preview branch can be built from the repo. Later migrations sit next to it; `supabase/migrations_archive/` holds the pre-baseline history for reference.
+
+New tables need explicit `GRANT`s in the migration that creates them (Supabase stopped auto-granting Data API access to new `public` tables on 2026-10-30). The app has no signed-out features, so `anon` has no access to the `public` schema. Rules for writing migrations are in `CLAUDE.md`.
+
+To regenerate the baseline from the live project: `python execution/export_schema_baseline.py` (needs `SUPABASE_ACCESS_TOKEN` and `SUPABASE_PROJECT_ID` in `.env`).
 
 ## Deploy (Vercel)
 

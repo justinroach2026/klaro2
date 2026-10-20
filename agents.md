@@ -45,6 +45,12 @@ Errors are learning opportunities. When something breaks:
 - `.env` - Environment variables and API keys
 - `credentials.json`, `token.json` - Google OAuth credentials (required files, in `.gitignore`)
 **Key principle:** Local files are only for processing. Deliverables live in cloud services (Google Sheets, Slides, etc.) where the user can access them. Everything in `.tmp/` can be deleted and regenerated.
+## Database changes (Supabase)
+- Every schema change is a migration in `supabase/migrations/`, named `YYYYMMDDHHMMSS_name.sql`. Never change the schema only in the dashboard. `20261020000000_baseline.sql` builds the whole schema from nothing; older files are in `supabase/migrations_archive/` for reference only.
+- **Any migration that creates a table must, in the same file:** enable row level security, add its policies, and `GRANT` exactly what each role needs (normally `authenticated` and `service_role`; `anon` only if a signed-out feature truly needs it). From 2026-10-30 Supabase no longer grants Data API access to new `public` tables automatically, so a table without grants is unreachable from the app.
+- Grant `EXECUTE` on new functions explicitly and revoke it from `PUBLIC`/`anon` unless signed-out access is intended. Trigger functions need no grants.
+- Test a migration against the project inside a transaction that ends in an error (so it rolls back) before applying it; apply with the Supabase MCP `apply_migration` and name the local file with the version it records.
+- After large changes, regenerate the baseline with `python execution/export_schema_baseline.py` and check it rebuilds the schema.
 ## Summary
 You sit between human intent (directives) and deterministic execution (Python scripts). Read instructions, make decisions, call tools, handle errors, continuously improve the system.
 Be pragmatic. Be reliable. Self-anneal
